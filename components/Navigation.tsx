@@ -17,6 +17,7 @@ export default function Navigation({ leagueId, leagueName }: NavigationProps) {
     { href: `${basePath}/standings`, label: 'Standings' },
     { href: `${basePath}/teams`, label: 'Teams' },
     { href: `${basePath}/players`, label: 'Players' },
+    { href: `${basePath}/player-analysis`, label: 'Player Analysis' },
     { href: `${basePath}/value`, label: 'Value Analyzer' },
     { href: `${basePath}/trade`, label: 'Trade Analyzer' },
     { href: `${basePath}/matchups`, label: 'Matchups' },
