@@ -165,8 +165,9 @@ export default function PlayerAnalysisPage() {
         if (weeklyStatsCache[currentSeason]?.[week.toString()]) {
           // Use cached data
           const cachedStats = weeklyStatsCache[currentSeason][week.toString()]
-          if (cachedStats[player.player_id]) {
-            weeklyStats.push({ week, stats: cachedStats[player.player_id] })
+          const playerStats = cachedStats[player.player_id]
+          if (playerStats) {
+            weeklyStats.push({ week, stats: playerStats })
           }
         } else {
           // Need to fetch
