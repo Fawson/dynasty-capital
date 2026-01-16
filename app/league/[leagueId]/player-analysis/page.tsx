@@ -68,7 +68,7 @@ export default function PlayerAnalysisPage() {
   const [selectedPlayer, setSelectedPlayer] = useState<PlayerWithDetails | null>(null)
   const [loadingStats, setLoadingStats] = useState(false)
   const [expandedStat, setExpandedStat] = useState<string | null>(null)
-  const [weeklyStatsCache, setWeeklyStatsCache] = useState<Record<string, Record<string, PlayerStats>>>({})
+  const [weeklyStatsCache, setWeeklyStatsCache] = useState<Record<string, Record<string, Record<string, PlayerStats>>>>({})
 
   const currentSeason = getCurrentSeason()
 
