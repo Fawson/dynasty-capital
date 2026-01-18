@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
+import Link from 'next/link'
 import { SleeperPlayer, SleeperRoster, LeagueUser, TradedPick } from '@/lib/types'
 import {
   getSleeperPlayerValue,
@@ -19,7 +20,7 @@ interface TeamValue {
   totalValue: number
   playerCount: number
   pickCount: number
-  topPlayers: { name: string; value: number; position: string }[]
+  topPlayers: { playerId: string; name: string; value: number; position: string }[]
   picks: OwnedDraftPick[]
 }
 
@@ -110,22 +111,34 @@ export default function ValueAnalyzerPage() {
           const playersWithValue = (roster.players || [])
             .map((playerId) => {
               const player = allPlayers[playerId]
-              if (!player || !player.position) return null
 
-              const value = getSleeperPlayerValue(
-                player.first_name,
-                player.last_name,
-                player.position,
-                player.team
-              )
+              if (!player) {
+                // Player not in database - still show them
+                return {
+                  playerId,
+                  name: `Unknown (${playerId})`,
+                  value: 0,
+                  position: 'Unknown',
+                }
+              }
+
+              const position = player.position || 'Unknown'
+              const value = player.position
+                ? getSleeperPlayerValue(
+                    player.first_name,
+                    player.last_name,
+                    player.position,
+                    player.team
+                  )
+                : 0
 
               return {
-                name: player.full_name,
+                playerId,
+                name: player.full_name || `Player ${playerId}`,
                 value,
-                position: player.position,
+                position,
               }
             })
-            .filter((p): p is { name: string; value: number; position: string } => p !== null)
             .sort((a, b) => b.value - a.value)
 
           const playerValue = playersWithValue.reduce((sum, p) => sum + p.value, 0)
@@ -141,13 +154,15 @@ export default function ValueAnalyzerPage() {
               const originalOwnerId = parseInt(originalOwnerStr)
 
               const standingsRank = standingsMap.get(originalOwnerId) || Math.ceil(totalTeams / 2)
-              const position = getPickPosition(standingsRank, totalTeams)
+              const position = getPickPosition(standingsRank, totalTeams, year)
               const value = getDraftPickValue(year, round, position)
 
               const originalOwnerName = rosterNameMap.get(originalOwnerId) || `Team ${originalOwnerId}`
               const isOwnPick = originalOwnerId === roster.roster_id
 
-              const posLabel = position.charAt(0).toUpperCase() + position.slice(1)
+              // Display labels: early=High (top of draft, more valuable), late=Low (bottom of draft, less valuable)
+              const posLabelMap: Record<string, string> = { early: 'High', mid: 'Mid', late: 'Low' }
+              const posLabel = posLabelMap[position] || 'Mid'
               const ordinal = getOrdinal(round)
 
               ownedPicks.push({
@@ -182,7 +197,7 @@ export default function ValueAnalyzerPage() {
             totalValue: playerValue + pickValue,
             playerCount: playersWithValue.length,
             pickCount: ownedPicks.length,
-            topPlayers: playersWithValue.slice(0, 5),
+            topPlayers: playersWithValue,
             picks: ownedPicks,
           }
         })
@@ -311,7 +326,13 @@ export default function ValueAnalyzerPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="font-semibold truncate">{team.name}</span>
+                      <Link
+                        href={`/league/${leagueId}/team/${team.rosterId}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="font-semibold truncate hover:text-sleeper-highlight transition-colors"
+                      >
+                        {team.name}
+                      </Link>
                       <span className="text-xl font-bold text-green-400 ml-4">
                         {team.totalValue.toLocaleString()}
                       </span>
@@ -340,15 +361,15 @@ export default function ValueAnalyzerPage() {
               {isExpanded && (
                 <div className="border-t border-sleeper-accent p-4 bg-sleeper-accent/20">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Top Players */}
+                    {/* Players */}
                     <div>
                       <h3 className="font-semibold mb-3 flex items-center gap-2">
-                        <span className="text-green-400">Top Players</span>
+                        <span className="text-green-400">Players</span>
                         <span className="text-gray-500 text-sm font-normal">
                           ({team.playerCount} total)
                         </span>
                       </h3>
-                      <div className="space-y-2">
+                      <div className="space-y-2 max-h-48 overflow-y-auto">
                         {team.topPlayers.map((player, pIndex) => (
                           <div
                             key={pIndex}
@@ -362,7 +383,12 @@ export default function ValueAnalyzerPage() {
                               >
                                 {player.position}
                               </span>
-                              <span className="text-sm">{player.name}</span>
+                              <Link
+                                href={`/league/${leagueId}/player-analysis?playerId=${player.playerId}`}
+                                className="text-sm hover:text-sleeper-highlight transition-colors"
+                              >
+                                {player.name}
+                              </Link>
                             </div>
                             <span className="text-green-400 text-sm">
                               {player.value.toLocaleString()}

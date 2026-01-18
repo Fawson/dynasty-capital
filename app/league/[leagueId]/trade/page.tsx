@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
+import Link from 'next/link'
 import { SleeperPlayer, SleeperRoster, LeagueUser, TradedPick } from '@/lib/types'
 import {
   getSleeperPlayerValue,
@@ -154,13 +155,15 @@ export default function TradePage() {
 
               // Get the original owner's standings rank to determine pick position
               const standingsRank = standingsMap.get(originalOwnerId) || Math.ceil(totalTeams / 2)
-              const position = getPickPosition(standingsRank, totalTeams)
+              const position = getPickPosition(standingsRank, totalTeams, year)
               const value = getDraftPickValue(year, round, position)
 
               const originalOwnerName = rosterNameMap.get(originalOwnerId) || `Team ${originalOwnerId}`
               const isOwnPick = originalOwnerId === roster.roster_id
 
-              const posLabel = position.charAt(0).toUpperCase() + position.slice(1)
+              // Display labels: early=High (top of draft, more valuable), late=Low (bottom of draft, less valuable)
+              const posLabelMap: Record<string, string> = { early: 'High', mid: 'Mid', late: 'Low' }
+              const posLabel = posLabelMap[position] || 'Mid'
               const ordinal = getOrdinal(round)
 
               ownedPicks.push({
@@ -355,7 +358,17 @@ export default function TradePage() {
             {/* Team 1 Receives */}
             <div>
               <p className="text-gray-400 text-sm mb-2">
-                {team1?.name || 'Team 1'} receives:
+                {team1 ? (
+                  <Link
+                    href={`/league/${leagueId}/team/${team1.rosterId}`}
+                    className="hover:text-sleeper-highlight transition-colors"
+                  >
+                    {team1.name}
+                  </Link>
+                ) : (
+                  'Team 1'
+                )}{' '}
+                receives:
               </p>
               <div className="space-y-2">
                 {team2Players.map((p) => (
@@ -363,7 +376,12 @@ export default function TradePage() {
                     key={p.player_id}
                     className="flex justify-between items-center bg-sleeper-accent px-3 py-2 rounded"
                   >
-                    <span className="text-sm">{p.full_name}</span>
+                    <Link
+                      href={`/league/${leagueId}/player-analysis?playerId=${p.player_id}`}
+                      className="text-sm hover:text-sleeper-highlight transition-colors"
+                    >
+                      {p.full_name}
+                    </Link>
                     <span className="text-green-400 text-sm">
                       {p.value.toLocaleString()}
                     </span>
@@ -430,7 +448,17 @@ export default function TradePage() {
             {/* Team 2 Receives */}
             <div>
               <p className="text-gray-400 text-sm mb-2">
-                {team2?.name || 'Team 2'} receives:
+                {team2 ? (
+                  <Link
+                    href={`/league/${leagueId}/team/${team2.rosterId}`}
+                    className="hover:text-sleeper-highlight transition-colors"
+                  >
+                    {team2.name}
+                  </Link>
+                ) : (
+                  'Team 2'
+                )}{' '}
+                receives:
               </p>
               <div className="space-y-2">
                 {team1Players.map((p) => (
@@ -438,7 +466,12 @@ export default function TradePage() {
                     key={p.player_id}
                     className="flex justify-between items-center bg-sleeper-accent px-3 py-2 rounded"
                   >
-                    <span className="text-sm">{p.full_name}</span>
+                    <Link
+                      href={`/league/${leagueId}/player-analysis?playerId=${p.player_id}`}
+                      className="text-sm hover:text-sleeper-highlight transition-colors"
+                    >
+                      {p.full_name}
+                    </Link>
                     <span className="text-green-400 text-sm">
                       {p.value.toLocaleString()}
                     </span>
@@ -553,7 +586,13 @@ export default function TradePage() {
                     >
                       {player.position}
                     </span>
-                    <span className="flex-1">{player.full_name}</span>
+                    <Link
+                      href={`/league/${leagueId}/player-analysis?playerId=${player.player_id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex-1 hover:text-sleeper-highlight transition-colors"
+                    >
+                      {player.full_name}
+                    </Link>
                     <span className="text-gray-400 text-sm">
                       {player.value.toLocaleString()}
                     </span>
@@ -707,7 +746,13 @@ export default function TradePage() {
                     >
                       {player.position}
                     </span>
-                    <span className="flex-1">{player.full_name}</span>
+                    <Link
+                      href={`/league/${leagueId}/player-analysis?playerId=${player.player_id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex-1 hover:text-sleeper-highlight transition-colors"
+                    >
+                      {player.full_name}
+                    </Link>
                     <span className="text-gray-400 text-sm">
                       {player.value.toLocaleString()}
                     </span>

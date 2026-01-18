@@ -88,19 +88,22 @@ export function getDraftPickValue(
   return DRAFT_PICK_VALUES[year.toString()]?.[round.toString()]?.[position] || 100
 }
 
-// Determine pick position (early/mid/late) based on standings rank
-// Lower rank = worse team = earlier pick
+// Determine pick position (early/mid/late) based on standings rank and year
+// For upcoming draft (2026): use early (low) or late (high) based on standings
+// For future drafts (2027+): always use mid
 export function getPickPosition(
   standingsRank: number,
-  totalTeams: number
+  totalTeams: number,
+  year: number = 2026
 ): 'early' | 'mid' | 'late' {
-  const percentile = standingsRank / totalTeams
+  // Future drafts are always valued as mid
+  if (year > 2026) {
+    return 'mid'
+  }
 
-  // Bottom third = early picks
-  if (percentile > 0.66) return 'early'
-  // Middle third = mid picks
-  if (percentile > 0.33) return 'mid'
-  // Top third = late picks
+  // For 2026: bottom half = early (low), top half = late (high)
+  const percentile = standingsRank / totalTeams
+  if (percentile > 0.5) return 'early'
   return 'late'
 }
 
@@ -612,12 +615,30 @@ function normalizeName(name: string): string {
     .trim()
 }
 
+// Remove common name suffixes for flexible matching
+function stripSuffix(name: string): string {
+  return name
+    .replace(/\s+(jr|sr|ii|iii|iv|v)\.?$/i, '')
+    .trim()
+}
+
 // Get player value by name
 export function getPlayerValue(playerName: string): number {
   const normalized = normalizeName(playerName)
 
-  const match = PLAYER_VALUES.find(
+  // Try exact match first
+  let match = PLAYER_VALUES.find(
     (p) => normalizeName(p.name) === normalized
+  )
+
+  if (match) {
+    return match.value
+  }
+
+  // Try matching without suffixes (e.g., "Kenneth Walker" matches "Kenneth Walker III")
+  const strippedInput = stripSuffix(normalized)
+  match = PLAYER_VALUES.find(
+    (p) => stripSuffix(normalizeName(p.name)) === strippedInput
   )
 
   if (match) {
@@ -631,9 +652,20 @@ export function getPlayerValue(playerName: string): number {
 // Get player tier
 export function getPlayerTier(playerName: string): number | null {
   const normalized = normalizeName(playerName)
-  const match = PLAYER_VALUES.find(
+
+  // Try exact match first
+  let match = PLAYER_VALUES.find(
     (p) => normalizeName(p.name) === normalized
   )
+
+  if (!match) {
+    // Try matching without suffixes
+    const strippedInput = stripSuffix(normalized)
+    match = PLAYER_VALUES.find(
+      (p) => stripSuffix(normalizeName(p.name)) === strippedInput
+    )
+  }
+
   return match?.tier || null
 }
 

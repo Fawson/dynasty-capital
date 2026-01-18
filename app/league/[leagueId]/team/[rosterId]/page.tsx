@@ -150,9 +150,12 @@ export default async function TeamDetailPage({
                 {player.position}
               </span>
               <div className="flex-1">
-                <p className="font-medium">
+                <Link
+                  href={`/league/${leagueId}/player-analysis?playerId=${player.player_id}`}
+                  className="font-medium hover:text-sleeper-highlight transition-colors"
+                >
                   {player.full_name || `${player.first_name} ${player.last_name}`}
-                </p>
+                </Link>
                 <p className="text-gray-500 text-sm">
                   {player.team || 'FA'} &bull; #{player.search_rank || 'N/A'}
                 </p>
@@ -186,9 +189,12 @@ export default async function TeamDetailPage({
                 {player.position}
               </span>
               <div className="flex-1">
-                <p className="font-medium">
+                <Link
+                  href={`/league/${leagueId}/player-analysis?playerId=${player.player_id}`}
+                  className="font-medium hover:text-sleeper-highlight transition-colors"
+                >
                   {player.full_name || `${player.first_name} ${player.last_name}`}
-                </p>
+                </Link>
                 <p className="text-gray-500 text-sm">
                   {player.team || 'FA'} &bull; #{player.search_rank || 'N/A'}
                 </p>

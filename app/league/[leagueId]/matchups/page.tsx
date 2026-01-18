@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
+import Link from 'next/link'
 import { SleeperMatchup, SleeperRoster, LeagueUser, SleeperLeague } from '@/lib/types'
 import { getCurrentWeek, getAvatarUrl } from '@/lib/sleeper'
 
@@ -176,7 +177,10 @@ export default function MatchupsPage() {
                     alt={t1.user?.display_name || 'Team'}
                     className="w-10 h-10 rounded-full"
                   />
-                  <div>
+                  <Link
+                    href={`/league/${leagueId}/team/${t1.roster.roster_id}`}
+                    className="hover:text-sleeper-highlight transition-colors"
+                  >
                     <p className="font-medium">
                       {t1.user?.metadata?.team_name ||
                         t1.user?.display_name ||
@@ -185,7 +189,7 @@ export default function MatchupsPage() {
                     <p className="text-gray-500 text-sm">
                       {t1.roster.settings.wins}-{t1.roster.settings.losses}
                     </p>
-                  </div>
+                  </Link>
                 </div>
 
                 {/* Score */}
@@ -219,7 +223,10 @@ export default function MatchupsPage() {
                       t2Winning ? 'opacity-100' : 'opacity-70'
                     }`}
                   >
-                    <div className="text-right">
+                    <Link
+                      href={`/league/${leagueId}/team/${t2.roster.roster_id}`}
+                      className="text-right hover:text-sleeper-highlight transition-colors"
+                    >
                       <p className="font-medium">
                         {t2.user?.metadata?.team_name ||
                           t2.user?.display_name ||
@@ -228,7 +235,7 @@ export default function MatchupsPage() {
                       <p className="text-gray-500 text-sm">
                         {t2.roster.settings.wins}-{t2.roster.settings.losses}
                       </p>
-                    </div>
+                    </Link>
                     <img
                       src={getAvatarUrl(t2.user?.avatar || null)}
                       alt={t2.user?.display_name || 'Team'}
