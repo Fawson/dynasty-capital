@@ -148,7 +148,32 @@ function LineChart({
     }
   })
 
-  // Get the team color for the line (use first team found, or default color)
+  // For multi-team coloring, create separate data series for each team
+  // Each series has values only for its team's segments (with overlap at transitions)
+  const teamDataSeries: Record<string, (number | null)[]> = {}
+  if (showTeamColors && teamsInOrder.length > 1) {
+    teamsInOrder.forEach(team => {
+      teamDataSeries[team] = chartData.map(() => null)
+    })
+
+    // Fill in values for each team, including overlap points at transitions
+    chartData.forEach((d, i) => {
+      const team = d.team
+      if (teamDataSeries[team]) {
+        teamDataSeries[team][i] = d.value
+        // Add overlap point at transition (previous point if different team)
+        if (i > 0 && chartData[i - 1].team !== team) {
+          teamDataSeries[team][i - 1] = chartData[i - 1].value
+        }
+        // Add overlap point at next transition
+        if (i < chartData.length - 1 && chartData[i + 1].team !== team) {
+          teamDataSeries[team][i + 1] = chartData[i + 1].value
+        }
+      }
+    })
+  }
+
+  // Default line color (used when not showing team colors or single team)
   const lineColor = showTeamColors && teamsInOrder.length > 0
     ? (NFL_TEAM_COLORS[teamsInOrder[0]] || color)
     : color
@@ -158,25 +183,35 @@ function LineChart({
   const regressionData = nonZeroData.map(d => ({ index: d.index, value: d.value }))
   const { slope, intercept } = calculateLinearRegression(regressionData)
 
-  // Add trend line values - straight line from first to last data point
-  const chartDataWithTrend = chartData.map((d) => {
-    // Calculate trend value based on original index for a true straight line
+  // Add trend line values and team-specific values
+  const chartDataWithTrend = chartData.map((d, i) => {
     const trendValue = slope * d.index + intercept
-    return {
+    const result: Record<string, any> = {
       ...d,
       trend: trendValue,
     }
+    // Add team-specific values for multi-team charts
+    if (showTeamColors && teamsInOrder.length > 1) {
+      teamsInOrder.forEach(team => {
+        result[`value_${team}`] = teamDataSeries[team][i]
+      })
+    }
+    return result
   })
 
   // Custom tooltip with team info
   const CustomTooltip = ({ active, payload, label: tooltipLabel }: any) => {
     if (active && payload && payload.length) {
-      const team = payload[0]?.payload?.team
+      // Find the actual value from any of the payloads
+      const validPayload = payload.find((p: any) => p.value !== null && p.value !== undefined)
+      if (!validPayload) return null
+      const team = validPayload?.payload?.team
+      const value = validPayload?.payload?.value
       const teamColor = showTeamColors && team ? NFL_TEAM_COLORS[team] || '#6B7280' : color
       return (
         <div className="bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 shadow-lg">
           <p className="text-gray-400 text-xs">{tooltipLabel}</p>
-          <p className="text-white font-bold">{format(payload[0].value)}</p>
+          <p className="text-white font-bold">{format(value)}</p>
           {showTeamColors && team && (
             <p className="text-xs mt-1" style={{ color: teamColor }}>{team}</p>
           )}
@@ -184,17 +219,6 @@ function LineChart({
       )
     }
     return null
-  }
-
-  // Custom dot renderer for team colors
-  const CustomDot = (props: any) => {
-    const { cx, cy, payload } = props
-    if (!cx || !cy || !payload || payload.value === 0) return null
-    const team = payload.team || 'FA'
-    const dotColor = showTeamColors ? (NFL_TEAM_COLORS[team] || '#6B7280') : color
-    return (
-      <circle cx={cx} cy={cy} r={4} fill={dotColor} stroke="#1f2937" strokeWidth={1} />
-    )
   }
 
   // Determine trend direction for label
@@ -209,6 +233,9 @@ function LineChart({
   const yMin = Math.max(0, minValue - range * 0.05)
   const yMax = maxValue + range * 0.05
 
+  // Check if we should render multiple team lines
+  const useMultiTeamLines = showTeamColors && teamsInOrder.length > 1
+
   return (
     <div className="w-full" style={{ height: height + (showBrush ? 50 : 0) }}>
       <ResponsiveContainer width="100%" height="100%">
@@ -217,10 +244,20 @@ function LineChart({
           margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
         >
           <defs>
-            <linearGradient id={`gradient-${label}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={lineColor} stopOpacity={0.4} />
-              <stop offset="95%" stopColor={lineColor} stopOpacity={0.05} />
-            </linearGradient>
+            {useMultiTeamLines ? (
+              // Create gradients for each team
+              teamsInOrder.map(team => (
+                <linearGradient key={team} id={`gradient-${label}-${team}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={NFL_TEAM_COLORS[team] || color} stopOpacity={0.3} />
+                  <stop offset="95%" stopColor={NFL_TEAM_COLORS[team] || color} stopOpacity={0.02} />
+                </linearGradient>
+              ))
+            ) : (
+              <linearGradient id={`gradient-${label}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={lineColor} stopOpacity={0.4} />
+                <stop offset="95%" stopColor={lineColor} stopOpacity={0.05} />
+              </linearGradient>
+            )}
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
           <XAxis
@@ -245,15 +282,33 @@ function LineChart({
             content={<CustomTooltip />}
             cursor={{ stroke: '#6b7280', strokeWidth: 1, strokeDasharray: '4 4' }}
           />
-          <Area
-            type="monotone"
-            dataKey="value"
-            stroke={lineColor}
-            strokeWidth={2}
-            fill={`url(#gradient-${label})`}
-            dot={false}
-            activeDot={{ r: 5, fill: lineColor, stroke: '#1f2937', strokeWidth: 2 }}
-          />
+          {useMultiTeamLines ? (
+            // Render separate line for each team with its color
+            teamsInOrder.map((team, idx) => (
+              <Area
+                key={team}
+                type="monotone"
+                dataKey={`value_${team}`}
+                stroke={NFL_TEAM_COLORS[team] || color}
+                strokeWidth={2}
+                fill={`url(#gradient-${label}-${team})`}
+                dot={false}
+                activeDot={{ r: 5, fill: NFL_TEAM_COLORS[team] || color, stroke: '#1f2937', strokeWidth: 2 }}
+                connectNulls={true}
+                isAnimationActive={idx === 0}
+              />
+            ))
+          ) : (
+            <Area
+              type="monotone"
+              dataKey="value"
+              stroke={lineColor}
+              strokeWidth={2}
+              fill={`url(#gradient-${label})`}
+              dot={false}
+              activeDot={{ r: 5, fill: lineColor, stroke: '#1f2937', strokeWidth: 2 }}
+            />
+          )}
           {/* Linear best fit trend line - only show with 5+ data points */}
           {nonZeroData.length >= 5 && (
             <Line
@@ -270,7 +325,7 @@ function LineChart({
             <Brush
               dataKey="name"
               height={30}
-              stroke={lineColor}
+              stroke={teamsInOrder.length > 0 ? (NFL_TEAM_COLORS[teamsInOrder[teamsInOrder.length - 1]] || color) : lineColor}
               fill="#1f2937"
               tickFormatter={() => ''}
             />
