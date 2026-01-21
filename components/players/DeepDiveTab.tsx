@@ -140,11 +140,31 @@ function LineChart({
     team: d.team || 'FA',
   }))
 
+  // Count occurrences of each team
+  const teamCounts: Record<string, number> = {}
+  chartData.forEach(d => {
+    if (d.team) {
+      teamCounts[d.team] = (teamCounts[d.team] || 0) + 1
+    }
+  })
+
   // Get unique teams for legend (in order of appearance)
+  // Filter out teams with < 3 data points (likely erroneous/fallback data)
   const teamsInOrder: string[] = []
   chartData.forEach(d => {
-    if (d.team && !teamsInOrder.includes(d.team)) {
+    if (d.team && !teamsInOrder.includes(d.team) && teamCounts[d.team] >= 3) {
       teamsInOrder.push(d.team)
+    }
+  })
+
+  // Reassign points with rare/erroneous teams to the nearest valid team
+  // This prevents gaps in the chart
+  let lastValidTeam = teamsInOrder[0] || 'FA'
+  chartData.forEach(d => {
+    if (teamCounts[d.team] < 3) {
+      d.team = lastValidTeam
+    } else {
+      lastValidTeam = d.team
     }
   })
 

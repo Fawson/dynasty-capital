@@ -21,9 +21,13 @@ export async function GET(request: NextRequest) {
     // Map of season-week to team abbreviation
     const teamHistory: Record<string, string> = {}
 
-    // Fetch last 6 seasons (2020-2025) to match stats data
-    const currentYear = new Date().getFullYear()
-    const seasons = Array.from({ length: 6 }, (_, i) => currentYear - i)
+    // Fetch last 6 seasons to match stats data
+    // NFL season runs Sept-Feb, so in Jan-Aug we use previous year as current season
+    const now = new Date()
+    const currentMonth = now.getMonth() // 0-indexed (0 = Jan)
+    const calendarYear = now.getFullYear()
+    const currentNFLSeason = currentMonth < 8 ? calendarYear - 1 : calendarYear // Before September = previous season
+    const seasons = Array.from({ length: 6 }, (_, i) => currentNFLSeason - i)
 
     // Process all seasons in parallel for speed
     const seasonPromises = seasons.map(async (season) => {

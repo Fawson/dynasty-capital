@@ -28,6 +28,7 @@ export default function AllPlayersTab({
 }: AllPlayersTabProps) {
   const [filter, setFilter] = useState<string>('ALL')
   const [sortBy, setSortBy] = useState<'value' | 'name'>('value')
+  const [searchQuery, setSearchQuery] = useState('')
 
   const players = useMemo(() => {
     const userMap = new Map(users.map((u) => [u.user_id, u]))
@@ -82,6 +83,15 @@ export default function AllPlayersTab({
 
   const filteredPlayers = players
     .filter((p) => filter === 'ALL' || p.position === filter)
+    .filter((p) => {
+      if (!searchQuery.trim()) return true
+      const query = searchQuery.toLowerCase()
+      return (
+        p.full_name?.toLowerCase().includes(query) ||
+        p.first_name?.toLowerCase().includes(query) ||
+        p.last_name?.toLowerCase().includes(query)
+      )
+    })
     .sort((a, b) => {
       if (sortBy === 'value') return b.value - a.value
       return a.full_name.localeCompare(b.full_name)
@@ -113,6 +123,35 @@ export default function AllPlayersTab({
         <p className="text-gray-400">
           {filteredPlayers.length} players ({players.length} total rostered)
         </p>
+      </div>
+
+      {/* Search */}
+      <div className="relative mb-4">
+        <svg
+          className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search players..."
+          className="w-full pl-10 pr-10 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-amber-500"
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Filters */}
