@@ -450,8 +450,8 @@ export default function DeepDiveTab({
       const ownership = ownershipMap.get(player.player_id)
       const seasonData: SeasonStats[] = []
 
-      // Fetch stats for last 5 seasons
-      const seasons = Array.from({ length: 5 }, (_, i) => currentSeasonNum - i)
+      // Fetch stats for last 3 seasons (reduced to speed up loading)
+      const seasons = Array.from({ length: 3 }, (_, i) => currentSeasonNum - i)
 
       for (const season of seasons) {
         const weeklyStats: WeeklyStats[] = []
@@ -460,13 +460,24 @@ export default function DeepDiveTab({
         // Determine how many weeks to fetch
         const weeksToFetch = season === currentSeasonNum ? getCurrentWeek() : 18
 
-        // Fetch all weeks for this season in parallel
-        const weekPromises = Array.from({ length: weeksToFetch }, (_, i) => i + 1).map(week =>
-          fetch(`https://api.sleeper.app/v1/stats/nfl/regular/${season}/${week}`)
-            .then(res => res.ok ? res.json() : ({} as Record<string, PlayerStats>))
-            .then((data: Record<string, PlayerStats>) => ({ week, data }))
-            .catch(() => ({ week, data: {} as Record<string, PlayerStats> }))
-        )
+        // Fetch all weeks for this season in parallel with timeout
+        const fetchWithTimeout = async (url: string, timeout = 10000): Promise<Record<string, PlayerStats>> => {
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), timeout)
+          try {
+            const res = await fetch(url, { signal: controller.signal })
+            clearTimeout(timeoutId)
+            return res.ok ? res.json() : {}
+          } catch {
+            clearTimeout(timeoutId)
+            return {}
+          }
+        }
+
+        const weekPromises = Array.from({ length: weeksToFetch }, (_, i) => i + 1).map(async week => {
+          const data = await fetchWithTimeout(`https://api.sleeper.app/v1/stats/nfl/regular/${season}/${week}`)
+          return { week, data }
+        })
 
         const results = await Promise.all(weekPromises)
 
