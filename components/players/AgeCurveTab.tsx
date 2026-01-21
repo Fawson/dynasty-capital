@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { SleeperPlayer } from '@/lib/types'
 import { getSleeperPlayerValue } from '@/lib/fantasypros'
+import { Skeleton, SkeletonChart } from '@/components/Skeleton'
 import {
   ComposedChart,
   Line,
@@ -167,7 +168,7 @@ export default function AgeCurveTab({ allPlayers }: AgeCurveTabProps) {
   // Calculate age curves with standard deviation (players with >50% snap share)
   const ageData = useMemo(() => {
     const positions = ['QB', 'RB', 'WR', 'TE']
-    const ageRange = Array.from({ length: 21 }, (_, i) => i + 20) // Ages 20-40
+    const integerAges = Array.from({ length: 21 }, (_, i) => i + 20) // Ages 20-40
 
     // Group all players by position and age
     const groupedData: Record<string, Record<number, number[]>> = {
@@ -184,10 +185,46 @@ export default function AgeCurveTab({ allPlayers }: AgeCurveTabProps) {
       groupedData[player.position][player.age].push(player.value)
     })
 
-    // Calculate stats for each age/position (all players with >50% snap share)
-    const dataPoints: AgeDataPoint[] = ageRange.map(age => {
+    // First calculate stats at integer ages
+    const integerStats: Record<number, Record<string, { avg: number | null; band: [number, number] | null }>> = {}
+
+    integerAges.forEach(age => {
+      integerStats[age] = {}
+      positions.forEach(pos => {
+        const values = groupedData[pos][age] || []
+        if (values.length >= 2) {
+          const { mean, stdDev } = calculateStats(values)
+          integerStats[age][pos] = {
+            avg: mean,
+            band: [Math.max(0, mean - stdDev), mean + stdDev]
+          }
+        } else {
+          integerStats[age][pos] = { avg: null, band: null }
+        }
+      })
+    })
+
+    // Helper to interpolate between two values
+    const interpolate = (v1: number | null, v2: number | null, t: number): number | null => {
+      if (v1 === null || v2 === null) return null
+      return v1 + (v2 - v1) * t
+    }
+
+    const interpolateBand = (b1: [number, number] | null, b2: [number, number] | null, t: number): [number, number] | null => {
+      if (b1 === null || b2 === null) return null
+      return [b1[0] + (b2[0] - b1[0]) * t, b1[1] + (b2[1] - b1[1]) * t]
+    }
+
+    // Create fine-grained data points (every 0.1 years)
+    const dataPoints: AgeDataPoint[] = []
+    for (let age = 20; age <= 40; age += 0.1) {
+      const roundedAge = Math.round(age * 10) / 10
+      const lowerAge = Math.floor(roundedAge)
+      const upperAge = Math.ceil(roundedAge)
+      const t = roundedAge - lowerAge // Interpolation factor (0 to 1)
+
       const point: AgeDataPoint = {
-        age,
+        age: roundedAge,
         QB_avg: null,
         QB_band: null,
         RB_avg: null,
@@ -199,17 +236,17 @@ export default function AgeCurveTab({ allPlayers }: AgeCurveTabProps) {
       }
 
       positions.forEach(pos => {
-        const values = groupedData[pos][age] || []
+        const lower = integerStats[lowerAge]?.[pos]
+        const upper = integerStats[upperAge]?.[pos]
 
-        if (values.length >= 2) { // Need at least 2 players for meaningful stats
-          const { mean, stdDev } = calculateStats(values)
-          point[`${pos}_avg` as keyof AgeDataPoint] = mean
-          point[`${pos}_band` as keyof AgeDataPoint] = [Math.max(0, mean - stdDev), mean + stdDev]
+        if (lower && upper) {
+          point[`${pos}_avg` as keyof AgeDataPoint] = interpolate(lower.avg, upper.avg, t)
+          point[`${pos}_band` as keyof AgeDataPoint] = interpolateBand(lower.band, upper.band, t)
         }
       })
 
-      return point
-    })
+      dataPoints.push(point)
+    }
 
     return dataPoints
   }, [playersWithValues])
@@ -390,41 +427,105 @@ export default function AgeCurveTab({ allPlayers }: AgeCurveTabProps) {
     return [Math.max(0, min - padding), max + padding]
   }, [ageData])
 
-  // Custom tooltip
-  const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ dataKey: string; value: number; color: string }>; label?: number }) => {
-    if (!active || !payload) return null
+  // Custom tooltip - manually looks up data from both ageData and selectedPlayers
+  const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ dataKey: string; value: number; color: string; name?: string }>; label?: number }) => {
+    if (!active || label == null) return null
 
-    // Filter to show only averages and player values (no bands)
-    const relevantData = payload.filter(p =>
-      p.dataKey.endsWith('_avg') ||
-      (!p.dataKey.includes('_band') && !p.dataKey.endsWith('_avg') && p.value != null)
-    )
+    const hoveredAge = typeof label === 'number' ? label : parseFloat(String(label))
+    if (isNaN(hoveredAge)) return null
 
-    if (relevantData.length === 0) return null
+    // Get curve data from payload (position averages)
+    const curveData: Array<{ name: string; value: number; color: string }> = []
+
+    if (payload) {
+      payload.forEach(p => {
+        if (p.value == null) return
+        if (p.dataKey.includes('_band')) return
+
+        if (p.dataKey.endsWith('_avg')) {
+          curveData.push({
+            name: p.dataKey.replace('_avg', '') + ' Curve',
+            value: p.value,
+            color: p.color
+          })
+        }
+      })
+    }
+
+    // Manually look up player data near this age (within 0.5 year tolerance)
+    const playerData: Array<{ name: string; value: number; color: string; age: number }> = []
+    const tolerance = 0.5
+
+    selectedPlayers.forEach(sp => {
+      if (sp.historicalValues.length === 0) return
+
+      // Find the closest data point to the hovered age
+      let closestValue: number | null = null
+      let closestAge: number | null = null
+      let closestDist = Infinity
+
+      sp.historicalValues.forEach(hv => {
+        const dist = Math.abs(hv.age - hoveredAge)
+        if (dist < closestDist && dist <= tolerance) {
+          closestDist = dist
+          closestValue = hv.value
+          closestAge = hv.age
+        }
+      })
+
+      if (closestValue !== null && closestAge !== null) {
+        playerData.push({
+          name: sp.player.full_name,
+          value: closestValue,
+          color: sp.color,
+          age: closestAge
+        })
+      }
+    })
+
+    if (curveData.length === 0 && playerData.length === 0) return null
 
     return (
-      <div className="bg-gray-800 border border-gray-700 rounded-lg p-3 shadow-lg">
-        <p className="text-gray-400 mb-2">Age: {typeof label === 'number' ? label.toFixed(2) : label}</p>
-        {relevantData.map((entry, index) => {
-          const isAvg = entry.dataKey.endsWith('_avg')
-          const displayLabel = isAvg
-            ? entry.dataKey.replace('_avg', '') + ' Avg'
-            : entry.dataKey
+      <div className="bg-gray-800 border border-gray-700 rounded-lg p-3 shadow-lg min-w-[180px]">
+        <p className="text-gray-400 mb-2 font-medium">Age: {hoveredAge.toFixed(1)}</p>
 
-          return (
-            <p key={index} style={{ color: entry.color }} className="text-sm">
-              {displayLabel}: {entry.value?.toLocaleString() || 'N/A'}
-            </p>
-          )
-        })}
+        {curveData.length > 0 && (
+          <div className="mb-2">
+            <p className="text-gray-500 text-xs mb-1">Position Averages:</p>
+            {curveData.map((entry, index) => (
+              <p key={index} style={{ color: entry.color }} className="text-sm">
+                {entry.name}: {entry.value.toLocaleString()}
+              </p>
+            ))}
+          </div>
+        )}
+
+        {playerData.length > 0 && (
+          <div>
+            <p className="text-gray-500 text-xs mb-1">Players:</p>
+            {playerData.map((entry, index) => (
+              <p key={index} style={{ color: entry.color }} className="text-sm">
+                {entry.name}: {entry.value.toLocaleString()}
+                <span className="text-gray-500 text-xs ml-1">(age {entry.age.toFixed(1)})</span>
+              </p>
+            ))}
+          </div>
+        )}
       </div>
     )
   }
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-400">Loading player data and snap shares...</div>
+      <div className="space-y-6">
+        <div className="bg-sleeper-primary p-4 rounded-lg border border-sleeper-accent">
+          <div className="flex flex-wrap items-center gap-4">
+            <Skeleton className="h-8 w-32" />
+            <Skeleton className="h-8 w-48" />
+            <Skeleton className="h-8 w-40" />
+          </div>
+        </div>
+        <SkeletonChart className="h-96" />
       </div>
     )
   }
@@ -483,7 +584,7 @@ export default function AgeCurveTab({ allPlayers }: AgeCurveTabProps) {
                 </span>
                 <span className="text-sm">{sp.player.full_name}</span>
                 <span className="text-gray-500 text-xs">Age {sp.player.age}</span>
-                {sp.loading && <span className="text-gray-400 text-xs">Loading...</span>}
+                {sp.loading && <div className="w-3 h-3 border-2 border-sleeper-accent border-t-sleeper-highlight rounded-full animate-spin" />}
                 {!sp.loading && sp.historicalValues.length > 0 && (
                   <span className="text-gray-500 text-xs">({sp.historicalValues.length} pts)</span>
                 )}
@@ -637,7 +738,7 @@ export default function AgeCurveTab({ allPlayers }: AgeCurveTabProps) {
                     stroke={sp.color}
                     strokeWidth={2}
                     dot={false}
-                    activeDot={false}
+                    activeDot={{ r: 4, fill: sp.color }}
                     connectNulls
                     legendType="circle"
                   />

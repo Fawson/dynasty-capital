@@ -3,18 +3,21 @@
 import { useEffect, useState } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import { SleeperPlayer, SleeperRoster, LeagueUser } from '@/lib/types'
+import { Skeleton, SkeletonPlayerList } from '@/components/Skeleton'
 import AllPlayersTab from '@/components/players/AllPlayersTab'
 import DeepDiveTab from '@/components/players/DeepDiveTab'
 import CompareTab from '@/components/players/CompareTab'
 import AgeCurveTab from '@/components/players/AgeCurveTab'
+import NewsTab from '@/components/players/NewsTab'
 
-type TabType = 'all-players' | 'deep-dive' | 'compare' | 'age-curve'
+type TabType = 'all-players' | 'deep-dive' | 'compare' | 'age-curve' | 'news'
 
 const TABS: { id: TabType; label: string; description: string }[] = [
   { id: 'all-players', label: 'All Players', description: 'Browse all rostered players' },
   { id: 'deep-dive', label: 'Deep Dive', description: 'Detailed player analysis' },
   { id: 'compare', label: 'Compare', description: 'Compare multiple players' },
   { id: 'age-curve', label: 'Age Curves', description: 'Dynasty value by age' },
+  { id: 'news', label: 'News', description: 'Latest player news and updates' },
 ]
 
 export default function PlayerAnalysisPage() {
@@ -64,8 +67,17 @@ export default function PlayerAnalysisPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-400">Loading player data...</div>
+      <div className="space-y-6">
+        <div>
+          <Skeleton className="h-8 w-48 mb-2" />
+          <Skeleton className="h-4 w-96" />
+        </div>
+        <div className="flex gap-2 border-b border-sleeper-accent pb-4">
+          {[1, 2, 3, 4].map(i => (
+            <Skeleton key={i} className="h-10 w-32" />
+          ))}
+        </div>
+        <SkeletonPlayerList rows={12} />
       </div>
     )
   }
@@ -129,6 +141,14 @@ export default function PlayerAnalysisPage() {
       {activeTab === 'age-curve' && (
         <AgeCurveTab
           allPlayers={allPlayers}
+        />
+      )}
+
+      {activeTab === 'news' && (
+        <NewsTab
+          allPlayers={allPlayers}
+          rosters={rosters}
+          users={users}
         />
       )}
     </div>

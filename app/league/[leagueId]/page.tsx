@@ -10,10 +10,13 @@ import Link from 'next/link'
 
 export default async function LeagueOverview({
   params,
+  searchParams,
 }: {
   params: Promise<{ leagueId: string }>
+  searchParams: Promise<{ userId?: string }>
 }) {
   const { leagueId } = await params
+  const { userId } = await searchParams
   const [league, rosters, users, matchups] = await Promise.all([
     getLeague(leagueId),
     getLeagueRosters(leagueId),
@@ -60,132 +63,136 @@ export default async function LeagueOverview({
   const avgPointsPerTeam = totalPoints / rosters.length
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
+      {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold mb-2">{league.name}</h1>
+        <h1 className="text-3xl font-bold mb-1">{league.name}</h1>
         <p className="text-gray-400">
           {league.season} Season &bull; {league.total_rosters} Teams &bull; Week{' '}
           {getCurrentWeek()}
         </p>
       </div>
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-sleeper-primary p-6 rounded-lg border border-sleeper-accent">
-          <p className="text-gray-400 text-sm mb-1">League Leader</p>
-          <p className="text-xl font-bold">
-            {standings[0]?.user?.display_name || 'Unknown'}
-          </p>
-          <p className="text-gray-400 text-sm">
-            {standings[0]?.settings.wins}-{standings[0]?.settings.losses}
-            {standings[0]?.settings.ties > 0 && `-${standings[0]?.settings.ties}`}
+      {/* Compact Stat Bar */}
+      <div className="flex flex-wrap gap-6 py-4 px-5 bg-gray-800 rounded-lg border-l-4 border-l-amber-500">
+        <div>
+          <p className="text-xs text-gray-500 uppercase tracking-wider">Leader</p>
+          <p className="font-semibold">{standings[0]?.user?.display_name || 'Unknown'}</p>
+        </div>
+        <div className="hidden sm:block w-px bg-gray-700"></div>
+        <div>
+          <p className="text-xs text-gray-500 uppercase tracking-wider">Top Scorer</p>
+          <p className="font-semibold">
+            {topScorerRoster?.user?.display_name || 'N/A'}{' '}
+            <span className="text-amber-500">{topScorer?.points.toFixed(1) || '0'}</span>
           </p>
         </div>
-
-        <div className="bg-sleeper-primary p-6 rounded-lg border border-sleeper-accent">
-          <p className="text-gray-400 text-sm mb-1">Top Scorer This Week</p>
-          <p className="text-xl font-bold">
-            {topScorerRoster?.user?.display_name || 'N/A'}
-          </p>
-          <p className="text-sleeper-highlight font-semibold">
-            {topScorer?.points.toFixed(2) || '0.00'} pts
-          </p>
-        </div>
-
-        <div className="bg-sleeper-primary p-6 rounded-lg border border-sleeper-accent">
-          <p className="text-gray-400 text-sm mb-1">League Average</p>
-          <p className="text-xl font-bold">{avgPointsPerTeam.toFixed(1)} pts</p>
-          <p className="text-gray-400 text-sm">per team total</p>
+        <div className="hidden sm:block w-px bg-gray-700"></div>
+        <div>
+          <p className="text-xs text-gray-500 uppercase tracking-wider">Avg Points</p>
+          <p className="font-semibold">{avgPointsPerTeam.toFixed(1)}</p>
         </div>
       </div>
 
       {/* Quick Links */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Link
-          href={`/league/${leagueId}/standings`}
-          className="bg-sleeper-primary p-4 rounded-lg border border-sleeper-accent hover:border-sleeper-highlight transition-colors text-center"
+          href={`/league/${leagueId}/standings${userId ? `?userId=${userId}` : ''}`}
+          className="bg-gray-800 p-4 rounded-lg border border-gray-700 hover:border-amber-500 transition-colors text-center group"
         >
-          <p className="text-2xl mb-2">1st</p>
-          <p className="text-gray-400 text-sm">View Standings</p>
+          <p className="text-2xl mb-1 group-hover:text-amber-500 transition-colors">1st</p>
+          <p className="text-gray-500 text-sm">Standings</p>
         </Link>
 
         <Link
-          href={`/league/${leagueId}/teams`}
-          className="bg-sleeper-primary p-4 rounded-lg border border-sleeper-accent hover:border-sleeper-highlight transition-colors text-center"
+          href={`/league/${leagueId}/teams${userId ? `?userId=${userId}` : ''}`}
+          className="bg-gray-800 p-4 rounded-lg border border-gray-700 hover:border-amber-500 transition-colors text-center group"
         >
-          <p className="text-2xl mb-2">{league.total_rosters}</p>
-          <p className="text-gray-400 text-sm">View Teams</p>
+          <p className="text-2xl mb-1 group-hover:text-amber-500 transition-colors">{league.total_rosters}</p>
+          <p className="text-gray-500 text-sm">Teams</p>
         </Link>
 
         <Link
-          href={`/league/${leagueId}/trade`}
-          className="bg-sleeper-primary p-4 rounded-lg border border-sleeper-accent hover:border-sleeper-highlight transition-colors text-center"
+          href={`/league/${leagueId}/trade${userId ? `?userId=${userId}` : ''}`}
+          className="bg-gray-800 p-4 rounded-lg border border-gray-700 hover:border-amber-500 transition-colors text-center group"
         >
-          <p className="text-2xl mb-2">Trade</p>
-          <p className="text-gray-400 text-sm">Analyzer</p>
+          <p className="text-2xl mb-1 group-hover:text-amber-500 transition-colors">Trade</p>
+          <p className="text-gray-500 text-sm">Analyzer</p>
         </Link>
 
         <Link
-          href={`/league/${leagueId}/matchups`}
-          className="bg-sleeper-primary p-4 rounded-lg border border-sleeper-accent hover:border-sleeper-highlight transition-colors text-center"
+          href={`/league/${leagueId}/matchups${userId ? `?userId=${userId}` : ''}`}
+          className="bg-gray-800 p-4 rounded-lg border border-gray-700 hover:border-amber-500 transition-colors text-center group"
         >
-          <p className="text-2xl mb-2">Wk {getCurrentWeek()}</p>
-          <p className="text-gray-400 text-sm">Matchups</p>
+          <p className="text-2xl mb-1 group-hover:text-amber-500 transition-colors">Wk {getCurrentWeek()}</p>
+          <p className="text-gray-500 text-sm">Matchups</p>
         </Link>
       </div>
 
-      {/* Standings Preview */}
-      <div className="bg-sleeper-primary rounded-lg border border-sleeper-accent overflow-hidden">
-        <div className="p-4 border-b border-sleeper-accent flex justify-between items-center">
-          <h2 className="font-semibold">Standings</h2>
-          <Link
-            href={`/league/${leagueId}/standings`}
-            className="text-sleeper-highlight text-sm hover:underline"
-          >
-            View All &rarr;
-          </Link>
-        </div>
-        <div className="divide-y divide-sleeper-accent">
-          {standings.slice(0, 5).map((roster, index) => (
-            <div
-              key={roster.roster_id}
-              className="px-4 py-3 flex items-center gap-4"
-            >
-              <span
-                className={`w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold ${
-                  index === 0
-                    ? 'bg-yellow-500 text-black'
-                    : index === 1
-                    ? 'bg-gray-400 text-black'
-                    : index === 2
-                    ? 'bg-amber-700 text-white'
-                    : 'bg-sleeper-accent text-gray-400'
-                }`}
-              >
-                {index + 1}
-              </span>
-              <div className="flex-1">
-                <p className="font-medium">
-                  {roster.user?.metadata?.team_name ||
-                    roster.user?.display_name ||
-                    'Unknown Team'}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="font-semibold">
-                  {roster.settings.wins}-{roster.settings.losses}
-                  {roster.settings.ties > 0 && `-${roster.settings.ties}`}
-                </p>
-                <p className="text-gray-400 text-sm">
-                  {(
-                    roster.settings.fpts +
-                    roster.settings.fpts_decimal / 100
-                  ).toFixed(1)}{' '}
-                  pts
-                </p>
-              </div>
-            </div>
-          ))}
+      {/* Standings Table - Open Design */}
+      <div>
+        <h2 className="text-lg font-semibold mb-3">Standings</h2>
+        <div className="overflow-hidden rounded-lg">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-gray-800 text-left">
+                <th className="px-4 py-3 text-xs text-gray-500 uppercase tracking-wider font-medium w-12">#</th>
+                <th className="px-4 py-3 text-xs text-gray-500 uppercase tracking-wider font-medium">Team</th>
+                <th className="px-4 py-3 text-xs text-gray-500 uppercase tracking-wider font-medium text-center">Record</th>
+                <th className="px-4 py-3 text-xs text-gray-500 uppercase tracking-wider font-medium text-right">Points</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-800">
+              {standings.map((roster, index) => {
+                const isUserTeam = userId && (roster.owner_id === userId || roster.user?.user_id === userId)
+                return (
+                  <tr
+                    key={roster.roster_id}
+                    className={`${
+                      isUserTeam
+                        ? 'bg-amber-500/10 border-l-4 border-l-amber-500'
+                        : 'hover:bg-gray-800/50'
+                    } transition-colors`}
+                  >
+                    <td className="px-4 py-4">
+                      <span
+                        className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-sm font-bold ${
+                          index === 0
+                            ? 'bg-amber-500 text-gray-900'
+                            : index === 1
+                            ? 'bg-gray-400 text-gray-900'
+                            : index === 2
+                            ? 'bg-amber-700 text-white'
+                            : 'text-gray-500'
+                        }`}
+                      >
+                        {index + 1}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <p className="font-medium">
+                        {roster.user?.metadata?.team_name ||
+                          roster.user?.display_name ||
+                          'Unknown Team'}
+                      </p>
+                      {roster.user?.metadata?.team_name && roster.user?.display_name && (
+                        <p className="text-gray-500 text-sm">{roster.user.display_name}</p>
+                      )}
+                    </td>
+                    <td className="px-4 py-4 text-center font-semibold">
+                      {roster.settings.wins}-{roster.settings.losses}
+                      {roster.settings.ties > 0 && `-${roster.settings.ties}`}
+                    </td>
+                    <td className="px-4 py-4 text-right">
+                      <span className="font-medium text-emerald-500">
+                        {(roster.settings.fpts + roster.settings.fpts_decimal / 100).toFixed(1)}
+                      </span>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

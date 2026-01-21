@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { SleeperPlayer, SleeperRoster, LeagueUser, TradedPick } from '@/lib/types'
+import { Skeleton, SkeletonTradeTeam } from '@/components/Skeleton'
 import {
   getSleeperPlayerValue,
   calculateTradeFairness,
@@ -24,6 +25,12 @@ interface TeamOption {
   name: string
   players: PlayerWithInfo[]
   ownedPicks: OwnedDraftPick[]
+  rosterSize: number
+}
+
+interface DropAdjustment {
+  player: PlayerWithInfo
+  value: number
 }
 
 type TabType = 'players' | 'picks'
@@ -34,6 +41,7 @@ export default function TradePage() {
 
   const [teams, setTeams] = useState<TeamOption[]>([])
   const [loading, setLoading] = useState(true)
+  const [rosterLimit, setRosterLimit] = useState<number>(30)
 
   const [team1Id, setTeam1Id] = useState<number | null>(null)
   const [team2Id, setTeam2Id] = useState<number | null>(null)
@@ -48,17 +56,23 @@ export default function TradePage() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const [rostersRes, usersRes, playersRes, tradedPicksRes] = await Promise.all([
+        const [rostersRes, usersRes, playersRes, tradedPicksRes, leagueRes] = await Promise.all([
           fetch(`https://api.sleeper.app/v1/league/${leagueId}/rosters`),
           fetch(`https://api.sleeper.app/v1/league/${leagueId}/users`),
           fetch('https://api.sleeper.app/v1/players/nfl'),
           fetch(`https://api.sleeper.app/v1/league/${leagueId}/traded_picks`),
+          fetch(`https://api.sleeper.app/v1/league/${leagueId}`),
         ])
 
         const rosters: SleeperRoster[] = await rostersRes.json()
         const users: LeagueUser[] = await usersRes.json()
         const allPlayers: Record<string, SleeperPlayer> = await playersRes.json()
         const tradedPicks: TradedPick[] = await tradedPicksRes.json()
+        const league = await leagueRes.json()
+
+        // Get roster limit from league settings
+        const maxRosterSize = league.roster_positions?.length || 30
+        setRosterLimit(maxRosterSize)
 
         const userMap = new Map(users.map((u) => [u.user_id, u]))
         const totalTeams = rosters.length
@@ -122,6 +136,7 @@ export default function TradePage() {
         const teamOptions: TeamOption[] = rosters.map((roster) => {
           const owner = userMap.get(roster.owner_id)
           const name = rosterNameMap.get(roster.roster_id) || 'Unknown'
+          const currentRosterSize = roster.players?.length || 0
 
           const players: PlayerWithInfo[] = (roster.players || [])
             .map((playerId) => {
@@ -161,8 +176,8 @@ export default function TradePage() {
               const originalOwnerName = rosterNameMap.get(originalOwnerId) || `Team ${originalOwnerId}`
               const isOwnPick = originalOwnerId === roster.roster_id
 
-              // Display labels: early=High (top of draft, more valuable), late=Low (bottom of draft, less valuable)
-              const posLabelMap: Record<string, string> = { early: 'High', mid: 'Mid', late: 'Low' }
+              // Display labels: early (top of draft, more valuable), late (bottom of draft, less valuable)
+              const posLabelMap: Record<string, string> = { early: 'Early', mid: 'Mid', late: 'Late' }
               const posLabel = posLabelMap[position] || 'Mid'
               const ordinal = getOrdinal(round)
 
@@ -194,6 +209,7 @@ export default function TradePage() {
             name,
             players,
             ownedPicks,
+            rosterSize: currentRosterSize,
           }
         })
 
@@ -220,11 +236,62 @@ export default function TradePage() {
 
   const team1PlayerTotal = team1Players.reduce((sum, p) => sum + p.value, 0)
   const team1PickTotal = team1Picks.reduce((sum, p) => sum + p.value, 0)
-  const team1Total = team1PlayerTotal + team1PickTotal
 
   const team2PlayerTotal = team2Players.reduce((sum, p) => sum + p.value, 0)
   const team2PickTotal = team2Picks.reduce((sum, p) => sum + p.value, 0)
-  const team2Total = team2PlayerTotal + team2PickTotal
+
+  // Calculate drop adjustments if roster limit would be exceeded
+  const calculateDropAdjustment = (
+    team: TeamOption | undefined,
+    playersReceiving: PlayerWithInfo[],
+    playersSending: PlayerWithInfo[]
+  ): DropAdjustment | null => {
+    if (!team) return null
+
+    // No drop needed if receiving same or fewer players than sending
+    if (playersReceiving.length <= playersSending.length) return null
+
+    // Calculate post-trade roster size
+    const postTradeSize = team.rosterSize + playersReceiving.length - playersSending.length
+
+    if (postTradeSize <= rosterLimit) return null
+
+    // Need to drop players - find the worst droppable player(s)
+    // Get remaining roster after trade (exclude players being sent, exclude K and DEF)
+    const remainingPlayers = team.players
+      .filter(p => !playersSending.some(sent => sent.player_id === p.player_id))
+      .filter(p => p.position !== 'K' && p.position !== 'DEF')
+
+    // Add players being received (exclude K and DEF)
+    const allPostTradePlayers = [
+      ...remainingPlayers,
+      ...playersReceiving.filter(p => p.position !== 'K' && p.position !== 'DEF')
+    ]
+
+    // Sort by value ascending to find worst player
+    allPostTradePlayers.sort((a, b) => a.value - b.value)
+
+    // The worst player would be dropped
+    const playerToDrop = allPostTradePlayers[0]
+
+    if (!playerToDrop) return null
+
+    return {
+      player: playerToDrop,
+      value: playerToDrop.value,
+    }
+  }
+
+  // Team 1 receives team2Players, sends team1Players
+  const team1DropAdjustment = calculateDropAdjustment(team1, team2Players, team1Players)
+  // Team 2 receives team1Players, sends team2Players
+  const team2DropAdjustment = calculateDropAdjustment(team2, team1Players, team2Players)
+
+  const team1DropValue = team1DropAdjustment?.value || 0
+  const team2DropValue = team2DropAdjustment?.value || 0
+
+  const team1Total = team1PlayerTotal + team1PickTotal - team1DropValue
+  const team2Total = team2PlayerTotal + team2PickTotal - team2DropValue
 
   const difference = team1Total - team2Total
 
@@ -306,17 +373,6 @@ export default function TradePage() {
     }
   }
 
-  const getPickPositionBadge = (position: 'early' | 'mid' | 'late') => {
-    switch (position) {
-      case 'early':
-        return 'text-green-400'
-      case 'mid':
-        return 'text-yellow-400'
-      case 'late':
-        return 'text-red-400'
-    }
-  }
-
   const clearTrade = () => {
     setTeam1Players([])
     setTeam2Players([])
@@ -326,8 +382,15 @@ export default function TradePage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-400">Loading teams and draft picks...</div>
+      <div className="space-y-6">
+        <div>
+          <Skeleton className="h-8 w-48 mb-2" />
+          <Skeleton className="h-4 w-80" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <SkeletonTradeTeam />
+          <SkeletonTradeTeam />
+        </div>
       </div>
     )
   }
@@ -376,12 +439,7 @@ export default function TradePage() {
                     key={p.player_id}
                     className="flex justify-between items-center bg-sleeper-accent px-3 py-2 rounded"
                   >
-                    <Link
-                      href={`/league/${leagueId}/player-analysis?playerId=${p.player_id}`}
-                      className="text-sm hover:text-sleeper-highlight transition-colors"
-                    >
-                      {p.full_name}
-                    </Link>
+                    <span className="text-sm">{p.full_name}</span>
                     <span className="text-green-400 text-sm">
                       {p.value.toLocaleString()}
                     </span>
@@ -404,10 +462,27 @@ export default function TradePage() {
                 {team2Players.length === 0 && team2Picks.length === 0 && (
                   <p className="text-gray-500 text-sm">Nothing selected</p>
                 )}
+                {team1DropAdjustment && (
+                  <div className="flex justify-between items-center bg-red-900/30 px-3 py-2 rounded border border-red-800">
+                    <span className="text-sm text-red-300">
+                      Drop: {team1DropAdjustment.player.full_name}
+                    </span>
+                    <span className="text-red-400 text-sm">
+                      -{team1DropAdjustment.value.toLocaleString()}
+                    </span>
+                  </div>
+                )}
               </div>
-              <p className="mt-2 text-right font-semibold text-green-400">
-                Total: {team2Total.toLocaleString()}
-              </p>
+              <div className="mt-2 text-right">
+                {team1DropAdjustment && (
+                  <p className="text-gray-500 text-xs">
+                    Assets: {(team2PlayerTotal + team2PickTotal).toLocaleString()} − Drop: {team1DropValue.toLocaleString()}
+                  </p>
+                )}
+                <p className="font-semibold text-green-400">
+                  Net Value: {team2Total.toLocaleString()}
+                </p>
+              </div>
             </div>
 
             {/* Comparison */}
@@ -466,12 +541,7 @@ export default function TradePage() {
                     key={p.player_id}
                     className="flex justify-between items-center bg-sleeper-accent px-3 py-2 rounded"
                   >
-                    <Link
-                      href={`/league/${leagueId}/player-analysis?playerId=${p.player_id}`}
-                      className="text-sm hover:text-sleeper-highlight transition-colors"
-                    >
-                      {p.full_name}
-                    </Link>
+                    <span className="text-sm">{p.full_name}</span>
                     <span className="text-green-400 text-sm">
                       {p.value.toLocaleString()}
                     </span>
@@ -494,10 +564,27 @@ export default function TradePage() {
                 {team1Players.length === 0 && team1Picks.length === 0 && (
                   <p className="text-gray-500 text-sm">Nothing selected</p>
                 )}
+                {team2DropAdjustment && (
+                  <div className="flex justify-between items-center bg-red-900/30 px-3 py-2 rounded border border-red-800">
+                    <span className="text-sm text-red-300">
+                      Drop: {team2DropAdjustment.player.full_name}
+                    </span>
+                    <span className="text-red-400 text-sm">
+                      -{team2DropAdjustment.value.toLocaleString()}
+                    </span>
+                  </div>
+                )}
               </div>
-              <p className="mt-2 text-right font-semibold text-green-400">
-                Total: {team1Total.toLocaleString()}
-              </p>
+              <div className="mt-2 text-right">
+                {team2DropAdjustment && (
+                  <p className="text-gray-500 text-xs">
+                    Assets: {(team1PlayerTotal + team1PickTotal).toLocaleString()} − Drop: {team2DropValue.toLocaleString()}
+                  </p>
+                )}
+                <p className="font-semibold text-green-400">
+                  Net Value: {team1Total.toLocaleString()}
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -586,13 +673,7 @@ export default function TradePage() {
                     >
                       {player.position}
                     </span>
-                    <Link
-                      href={`/league/${leagueId}/player-analysis?playerId=${player.player_id}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="flex-1 hover:text-sleeper-highlight transition-colors"
-                    >
-                      {player.full_name}
-                    </Link>
+                    <span className="flex-1">{player.full_name}</span>
                     <span className="text-gray-400 text-sm">
                       {player.value.toLocaleString()}
                     </span>
@@ -633,12 +714,7 @@ export default function TradePage() {
                         >
                           R{pick.round}
                         </span>
-                        <span className="flex-1">
-                          {pick.label}
-                          <span className={`ml-2 text-xs ${getPickPositionBadge(pick.position)}`}>
-                            ({pick.position})
-                          </span>
-                        </span>
+                        <span className="flex-1">{pick.label}</span>
                         <span className="text-gray-400 text-sm">
                           {pick.value.toLocaleString()}
                         </span>
@@ -746,13 +822,7 @@ export default function TradePage() {
                     >
                       {player.position}
                     </span>
-                    <Link
-                      href={`/league/${leagueId}/player-analysis?playerId=${player.player_id}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="flex-1 hover:text-sleeper-highlight transition-colors"
-                    >
-                      {player.full_name}
-                    </Link>
+                    <span className="flex-1">{player.full_name}</span>
                     <span className="text-gray-400 text-sm">
                       {player.value.toLocaleString()}
                     </span>
@@ -793,12 +863,7 @@ export default function TradePage() {
                         >
                           R{pick.round}
                         </span>
-                        <span className="flex-1">
-                          {pick.label}
-                          <span className={`ml-2 text-xs ${getPickPositionBadge(pick.position)}`}>
-                            ({pick.position})
-                          </span>
-                        </span>
+                        <span className="flex-1">{pick.label}</span>
                         <span className="text-gray-400 text-sm">
                           {pick.value.toLocaleString()}
                         </span>

@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { SleeperPlayer, SleeperRoster, LeagueUser } from '@/lib/types'
 import { getSleeperPlayerValue } from '@/lib/fantasypros'
+import { Skeleton, SkeletonCard, SkeletonChart } from '@/components/Skeleton'
 import { getCurrentSeason } from '@/lib/sleeper'
 import {
   LineChart as RechartsLineChart,
@@ -260,6 +261,9 @@ export default function DeepDiveTab({
   const [historicalValues, setHistoricalValues] = useState<{ date: string; value: number }[]>([])
   const [loadingHistorical, setLoadingHistorical] = useState(false)
   const [initialLoadDone, setInitialLoadDone] = useState(false)
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(false)
+  const statsScrollRef = useRef<HTMLDivElement>(null)
 
   const currentSeason = getCurrentSeason()
   const currentSeasonNum = parseInt(currentSeason)
@@ -507,6 +511,41 @@ export default function DeepDiveTab({
     return s[(v - 20) % 10] || s[v] || s[0]
   }
 
+  // Check scroll position and update arrow visibility
+  const checkScrollPosition = useCallback(() => {
+    const container = statsScrollRef.current
+    if (!container) return
+
+    setCanScrollLeft(container.scrollLeft > 0)
+    setCanScrollRight(container.scrollLeft < container.scrollWidth - container.clientWidth - 1)
+  }, [])
+
+  // Scroll the stats container
+  const scrollStats = (direction: 'left' | 'right') => {
+    const container = statsScrollRef.current
+    if (!container) return
+
+    const scrollAmount = 200
+    container.scrollBy({
+      left: direction === 'left' ? -scrollAmount : scrollAmount,
+      behavior: 'smooth'
+    })
+  }
+
+  // Update scroll indicators when stats change
+  useEffect(() => {
+    checkScrollPosition()
+    const container = statsScrollRef.current
+    if (container) {
+      container.addEventListener('scroll', checkScrollPosition)
+      window.addEventListener('resize', checkScrollPosition)
+      return () => {
+        container.removeEventListener('scroll', checkScrollPosition)
+        window.removeEventListener('resize', checkScrollPosition)
+      }
+    }
+  }, [selectedPlayer, checkScrollPosition])
+
   // Get relevant stats for player's position with trends (all historical data)
   const relevantStats = useMemo(() => {
     if (!selectedPlayer || !selectedPlayer.seasonData[0]) return []
@@ -630,8 +669,10 @@ export default function DeepDiveTab({
 
       {/* Loading Stats */}
       {loadingStats && (
-        <div className="flex items-center justify-center h-64">
-          <div className="text-gray-400">Loading player stats (up to 5 seasons)...</div>
+        <div className="space-y-6">
+          <SkeletonCard />
+          <SkeletonChart />
+          <SkeletonCard />
         </div>
       )}
 
@@ -639,7 +680,7 @@ export default function DeepDiveTab({
       {selectedPlayer && !loadingStats && (
         <div className="space-y-6">
           {/* Player Header */}
-          <div className="bg-sleeper-primary p-6 rounded-lg border border-sleeper-accent">
+          <div className="bg-gray-800 p-6 rounded-lg border border-gray-700">
             <div className="flex items-start gap-4">
               <span className={`px-3 py-1.5 rounded text-sm font-bold ${getPositionColor(selectedPlayer.position)}`}>
                 {selectedPlayer.position}
@@ -658,7 +699,7 @@ export default function DeepDiveTab({
                     <span className="text-gray-500">Owned by:</span>{' '}
                     <Link
                       href={`/league/${leagueId}/team/${selectedPlayer.rosterId}`}
-                      className="text-sleeper-highlight hover:underline transition-colors"
+                      className="text-amber-500 hover:underline transition-colors"
                     >
                       {selectedPlayer.ownerName}
                     </Link>
@@ -666,7 +707,7 @@ export default function DeepDiveTab({
                 )}
               </div>
               <div className="text-right">
-                <div className="text-3xl font-bold text-green-400">
+                <div className="text-3xl font-bold text-emerald-500">
                   {selectedPlayer.value.toLocaleString()}
                 </div>
                 <div className="text-gray-500 text-sm">Dynasty Value</div>
@@ -685,12 +726,39 @@ export default function DeepDiveTab({
 
           {/* Stat Selector Bar - Excel-style column headers */}
           <div className="bg-sleeper-primary rounded-lg border border-sleeper-accent overflow-hidden">
-            {/* Stat Tabs - Scrollable on mobile */}
-            <div className="flex overflow-x-auto border-b border-sleeper-accent">
+            {/* Stat Tabs - Scrollable with arrows */}
+            <div className="relative border-b border-sleeper-accent">
+              {/* Left scroll arrow */}
+              {canScrollLeft && (
+                <button
+                  onClick={() => scrollStats('left')}
+                  className="absolute left-0 top-0 bottom-0 z-10 px-2 bg-gradient-to-r from-sleeper-primary via-sleeper-primary to-transparent hover:from-gray-700 transition-colors flex items-center"
+                  aria-label="Scroll left"
+                >
+                  <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+              )}
+
+              {/* Right scroll arrow */}
+              {canScrollRight && (
+                <button
+                  onClick={() => scrollStats('right')}
+                  className="absolute right-0 top-0 bottom-0 z-10 px-2 bg-gradient-to-l from-sleeper-primary via-sleeper-primary to-transparent hover:from-gray-700 transition-colors flex items-center"
+                  aria-label="Scroll right"
+                >
+                  <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              )}
+
+              <div ref={statsScrollRef} className="flex overflow-x-auto scrollbar-hide">
               {/* Dynasty Value - special tab */}
               <button
                 onClick={() => setExpandedStat('dynasty_value')}
-                className={`px-3 py-2 text-xs font-medium border-r border-sleeper-accent transition-colors flex-shrink-0 min-w-[60px] ${
+                className={`px-3 py-2 text-xs font-medium border-r border-sleeper-accent transition-colors flex-1 min-w-[70px] ${
                   expandedStat === 'dynasty_value'
                     ? 'bg-sleeper-highlight text-white'
                     : 'text-gray-400 hover:bg-sleeper-accent hover:text-white'
@@ -705,7 +773,7 @@ export default function DeepDiveTab({
               {/* Fantasy Points - special tab */}
               <button
                 onClick={() => setExpandedStat('pts_half_ppr')}
-                className={`px-3 py-2 text-xs font-medium border-r border-sleeper-accent transition-colors flex-shrink-0 min-w-[60px] ${
+                className={`px-3 py-2 text-xs font-medium border-r border-sleeper-accent transition-colors flex-1 min-w-[70px] ${
                   expandedStat === 'pts_half_ppr'
                     ? 'bg-sleeper-highlight text-white'
                     : 'text-gray-400 hover:bg-sleeper-accent hover:text-white'
@@ -724,7 +792,7 @@ export default function DeepDiveTab({
                 <button
                   key={stat.key}
                   onClick={() => setExpandedStat(stat.key)}
-                  className={`px-3 py-2 text-xs font-medium border-r border-sleeper-accent last:border-r-0 transition-colors flex-shrink-0 min-w-[60px] ${
+                  className={`px-3 py-2 text-xs font-medium border-r border-sleeper-accent last:border-r-0 transition-colors flex-1 min-w-[70px] ${
                     expandedStat === stat.key
                       ? 'bg-sleeper-highlight text-white'
                       : 'text-gray-400 hover:bg-sleeper-accent hover:text-white'
@@ -736,6 +804,7 @@ export default function DeepDiveTab({
                   </div>
                 </button>
               ))}
+              </div>
             </div>
 
             {/* Chart Content */}
@@ -757,8 +826,16 @@ export default function DeepDiveTab({
                     </div>
                   </div>
                   {loadingHistorical ? (
-                    <div className="bg-sleeper-accent/30 rounded-lg p-8 text-center text-gray-400">
-                      Loading historical values...
+                    <div className="bg-sleeper-accent/30 rounded-lg p-4">
+                      <div className="flex items-end gap-2 h-48">
+                        {Array.from({ length: 12 }).map((_, i) => (
+                          <Skeleton
+                            key={i}
+                            className="flex-1"
+                            style={{ height: `${30 + Math.random() * 60}%` }}
+                          />
+                        ))}
+                      </div>
                     </div>
                   ) : historicalValues.length > 0 ? (
                     <>

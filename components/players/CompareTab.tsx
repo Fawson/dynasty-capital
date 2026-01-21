@@ -4,6 +4,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react'
 import Link from 'next/link'
 import { SleeperPlayer, SleeperRoster, LeagueUser } from '@/lib/types'
 import { getSleeperPlayerValue } from '@/lib/fantasypros'
+import { Skeleton } from '@/components/Skeleton'
 import { getCurrentSeason } from '@/lib/sleeper'
 import {
   LineChart,
@@ -585,7 +586,9 @@ export default function CompareTab({
                     className="w-full px-3 py-2 bg-sleeper-accent border border-sleeper-accent rounded text-white placeholder-gray-500 focus:outline-none focus:border-sleeper-highlight"
                   />
                   {slot.loading && (
-                    <div className="absolute right-3 top-2 text-gray-400">Loading...</div>
+                    <div className="absolute right-3 top-2">
+                      <div className="w-5 h-5 border-2 border-sleeper-accent border-t-sleeper-highlight rounded-full animate-spin" />
+                    </div>
                   )}
                   {searchResults.length > 0 && (
                     <div className="absolute z-10 w-full mt-1 bg-sleeper-primary border border-sleeper-accent rounded-lg shadow-lg max-h-64 overflow-y-auto">

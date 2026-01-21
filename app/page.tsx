@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { SleeperUser, SleeperLeague } from '@/lib/types'
 import { getUser, getUserLeagues, getAvatarUrl, getCurrentSeason } from '@/lib/sleeper'
 
@@ -77,39 +78,42 @@ export default function Home() {
   }
 
   const selectLeague = (leagueId: string) => {
-    router.push(`/league/${leagueId}`)
+    router.push(`/league/${leagueId}?userId=${user?.user_id}`)
   }
 
   return (
     <main className="min-h-screen p-8">
       <div className="max-w-2xl mx-auto">
         <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold mb-4">Fantasy Football Analyzer</h1>
+          <h1 className="text-5xl font-bold mb-4 tracking-tight">
+              <span className="font-serif">Dynasty</span>{' '}
+              <span className="font-serif text-[#1B6B5A]">Capital</span>
+            </h1>
           <p className="text-gray-400">
             Analyze your Sleeper fantasy football league with advanced stats and trade tools
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="mb-8">
-          <div className="flex gap-4 mb-4">
+          <div className="flex gap-3 mb-4">
             <input
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="Enter your Sleeper username"
-              className="flex-1 px-4 py-3 bg-sleeper-primary border border-sleeper-accent rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-sleeper-highlight"
+              className="flex-1 px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-amber-500"
             />
             <button
               type="submit"
               disabled={loading}
-              className="px-6 py-3 bg-sleeper-highlight text-white rounded-lg font-semibold hover:bg-opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-6 py-3 bg-amber-500 text-gray-900 rounded-lg font-semibold hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {loading ? 'Loading...' : 'Find Leagues'}
             </button>
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-gray-400 text-sm">Season:</span>
+            <span className="text-gray-500 text-sm">Season:</span>
             <div className="flex gap-2">
               {availableSeasons.map((s) => (
                 <button
@@ -118,8 +122,8 @@ export default function Home() {
                   onClick={() => changeSeason(s)}
                   className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
                     season === s
-                      ? 'bg-sleeper-highlight text-white'
-                      : 'bg-sleeper-accent text-gray-400 hover:text-white'
+                      ? 'bg-amber-500 text-gray-900'
+                      : 'bg-gray-700 text-gray-400 hover:text-white'
                   }`}
                 >
                   {s}
@@ -137,21 +141,22 @@ export default function Home() {
 
         {user && leagues.length > 0 && (
           <div>
-            <div className="flex items-center gap-4 mb-6 p-4 bg-sleeper-primary rounded-lg">
+            <div className="flex items-center gap-4 mb-6 p-4 bg-gray-800 rounded-lg border-l-4 border-l-amber-500">
               <img
                 src={getAvatarUrl(user.avatar)}
                 alt={user.display_name}
-                className="w-12 h-12 rounded-full"
+                className="w-12 h-12 rounded-full bg-gray-700"
+                onError={(e) => { e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Crect fill="%23374151" width="100" height="100"/%3E%3Ctext x="50" y="60" text-anchor="middle" fill="%23666" font-size="40"%3E?%3C/text%3E%3C/svg%3E' }}
               />
               <div>
                 <p className="font-semibold">{user.display_name}</p>
-                <p className="text-gray-400 text-sm">@{user.username}</p>
+                <p className="text-gray-500 text-sm">@{user.username}</p>
               </div>
             </div>
 
             <h2 className="text-xl font-semibold mb-4">
               Select a League
-              <span className="text-gray-400 text-base font-normal ml-2">
+              <span className="text-gray-500 text-base font-normal ml-2">
                 ({season} Season)
               </span>
             </h2>
@@ -160,23 +165,24 @@ export default function Home() {
                 <button
                   key={league.league_id}
                   onClick={() => selectLeague(league.league_id)}
-                  className="w-full p-4 bg-sleeper-primary border border-sleeper-accent rounded-lg text-left hover:border-sleeper-highlight transition-colors group"
+                  className="w-full p-4 bg-gray-800 border border-gray-700 rounded-lg text-left hover:border-amber-500 transition-colors group"
                 >
                   <div className="flex items-center gap-4">
                     <img
                       src={getAvatarUrl(league.avatar, 'league')}
                       alt={league.name}
-                      className="w-10 h-10 rounded-lg"
+                      className="w-10 h-10 rounded-lg bg-gray-700"
+                      onError={(e) => { e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Crect fill="%23374151" width="100" height="100"/%3E%3Ctext x="50" y="60" text-anchor="middle" fill="%23666" font-size="40"%3E?%3C/text%3E%3C/svg%3E' }}
                     />
                     <div className="flex-1">
-                      <p className="font-semibold group-hover:text-sleeper-highlight transition-colors">
+                      <p className="font-semibold group-hover:text-amber-500 transition-colors">
                         {league.name}
                       </p>
-                      <p className="text-gray-400 text-sm">
+                      <p className="text-gray-500 text-sm">
                         {league.total_rosters} teams &bull; {league.season} Season
                       </p>
                     </div>
-                    <span className="text-gray-500 group-hover:text-sleeper-highlight transition-colors">
+                    <span className="text-gray-500 group-hover:text-amber-500 transition-colors">
                       &rarr;
                     </span>
                   </div>
@@ -185,6 +191,32 @@ export default function Home() {
             </div>
           </div>
         )}
+
+        {/* Games Section */}
+        <div className="mt-12 pt-8 border-t border-gray-700">
+          <h3 className="text-gray-500 text-sm uppercase tracking-wider mb-4 text-center">Games</h3>
+          <Link
+            href="/snapshot"
+            className="block p-4 bg-gray-800 border border-gray-700 rounded-lg hover:border-amber-500 transition-colors group"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-amber-500/20 rounded-lg flex items-center justify-center">
+                <span className="text-2xl">📊</span>
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold group-hover:text-amber-500 transition-colors">
+                  Snapshot
+                </p>
+                <p className="text-gray-500 text-sm">
+                  Guess the player from their dynasty value chart
+                </p>
+              </div>
+              <span className="text-gray-500 group-hover:text-amber-500 transition-colors">
+                Play →
+              </span>
+            </div>
+          </Link>
+        </div>
       </div>
     </main>
   )

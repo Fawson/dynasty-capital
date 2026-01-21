@@ -4,10 +4,13 @@ import Link from 'next/link'
 
 export default async function TeamsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ leagueId: string }>
+  searchParams: Promise<{ userId?: string }>
 }) {
   const { leagueId } = await params
+  const { userId } = await searchParams
   const [league, rosters, users] = await Promise.all([
     getLeague(leagueId),
     getLeagueRosters(leagueId),
@@ -41,40 +44,40 @@ export default async function TeamsPage({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold mb-2">Teams</h1>
-        <p className="text-gray-400">
+        <h1 className="text-2xl font-bold mb-1">Teams</h1>
+        <p className="text-gray-500">
           Top {playoffTeams} teams make the playoffs
         </p>
       </div>
 
-      <div className="bg-sleeper-primary rounded-lg border border-sleeper-accent overflow-x-auto">
+      <div className="overflow-x-auto rounded-lg">
         <table className="w-full min-w-[500px]">
-          <thead className="bg-sleeper-accent">
-            <tr>
-              <th className="px-2 sm:px-4 py-3 text-left text-sm font-semibold text-gray-300">
-                Rank
+          <thead>
+            <tr className="bg-gray-800 text-left">
+              <th className="px-3 sm:px-4 py-3 text-xs text-gray-500 uppercase tracking-wider font-medium">
+                #
               </th>
-              <th className="px-2 sm:px-4 py-3 text-left text-sm font-semibold text-gray-300">
+              <th className="px-3 sm:px-4 py-3 text-xs text-gray-500 uppercase tracking-wider font-medium">
                 Team
               </th>
-              <th className="px-2 sm:px-4 py-3 text-center text-sm font-semibold text-gray-300">
+              <th className="px-3 sm:px-4 py-3 text-xs text-gray-500 uppercase tracking-wider font-medium text-center">
                 Record
               </th>
-              <th className="px-2 sm:px-4 py-3 text-right text-sm font-semibold text-gray-300 hidden sm:table-cell">
+              <th className="px-3 sm:px-4 py-3 text-xs text-gray-500 uppercase tracking-wider font-medium text-right hidden sm:table-cell">
                 Win %
               </th>
-              <th className="px-2 sm:px-4 py-3 text-right text-sm font-semibold text-gray-300">
+              <th className="px-3 sm:px-4 py-3 text-xs text-gray-500 uppercase tracking-wider font-medium text-right">
                 PF
               </th>
-              <th className="px-2 sm:px-4 py-3 text-right text-sm font-semibold text-gray-300 hidden sm:table-cell">
+              <th className="px-3 sm:px-4 py-3 text-xs text-gray-500 uppercase tracking-wider font-medium text-right hidden sm:table-cell">
                 PA
               </th>
-              <th className="px-2 sm:px-4 py-3 text-right text-sm font-semibold text-gray-300 hidden sm:table-cell">
-                Diff
+              <th className="px-3 sm:px-4 py-3 text-xs text-gray-500 uppercase tracking-wider font-medium text-right hidden sm:table-cell">
+                +/-
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-sleeper-accent">
+          <tbody className="divide-y divide-gray-800">
             {standings.map((roster, index) => {
               const totalGames =
                 roster.settings.wins + roster.settings.losses + roster.settings.ties
@@ -89,65 +92,70 @@ export default async function TeamsPage({
                 roster.settings.fpts_against_decimal / 100
               const diff = pointsFor - pointsAgainst
               const inPlayoffs = index < playoffTeams
+              const isUserTeam = userId && (roster.owner_id === userId || roster.user?.user_id === userId)
 
               return (
                 <tr
                   key={roster.roster_id}
                   className={`${
-                    inPlayoffs ? 'bg-green-900/10' : ''
-                  } hover:bg-sleeper-accent/50 transition-colors`}
+                    isUserTeam
+                      ? 'bg-amber-500/10 border-l-4 border-l-amber-500'
+                      : inPlayoffs
+                      ? 'bg-emerald-900/10'
+                      : ''
+                  } hover:bg-gray-800/50 transition-colors`}
                 >
-                  <td className="px-2 sm:px-4 py-3 sm:py-4">
+                  <td className="px-3 sm:px-4 py-4">
                     <span
-                      className={`inline-flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm font-bold ${
+                      className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-sm font-bold ${
                         index === 0
-                          ? 'bg-yellow-500 text-black'
+                          ? 'bg-amber-500 text-gray-900'
                           : index === 1
-                          ? 'bg-gray-400 text-black'
+                          ? 'bg-gray-400 text-gray-900'
                           : index === 2
                           ? 'bg-amber-700 text-white'
                           : inPlayoffs
-                          ? 'bg-green-800 text-white'
-                          : 'bg-sleeper-accent text-gray-400'
+                          ? 'bg-emerald-800 text-white'
+                          : 'text-gray-500'
                       }`}
                     >
                       {index + 1}
                     </span>
                   </td>
-                  <td className="px-2 sm:px-4 py-3 sm:py-4">
+                  <td className="px-3 sm:px-4 py-4">
                     <Link
-                      href={`/league/${leagueId}/team/${roster.roster_id}`}
-                      className="block hover:text-sleeper-highlight transition-colors"
+                      href={`/league/${leagueId}/team/${roster.roster_id}${userId ? `?userId=${userId}` : ''}`}
+                      className="block hover:text-amber-500 transition-colors"
                     >
-                      <p className="font-medium text-sm sm:text-base truncate max-w-[120px] sm:max-w-none">
+                      <p className="font-medium text-sm sm:text-base truncate max-w-[140px] sm:max-w-none">
                         {roster.user?.metadata?.team_name ||
                           roster.user?.display_name ||
                           'Unknown Team'}
                       </p>
                       {roster.user?.display_name &&
                         roster.user?.metadata?.team_name && (
-                          <p className="text-gray-500 text-xs sm:text-sm truncate max-w-[120px] sm:max-w-none">
+                          <p className="text-gray-500 text-xs sm:text-sm truncate max-w-[140px] sm:max-w-none">
                             {roster.user.display_name}
                           </p>
                         )}
                     </Link>
                   </td>
-                  <td className="px-2 sm:px-4 py-3 sm:py-4 text-center font-semibold text-sm sm:text-base">
+                  <td className="px-3 sm:px-4 py-4 text-center font-semibold">
                     {roster.settings.wins}-{roster.settings.losses}
                     {roster.settings.ties > 0 && `-${roster.settings.ties}`}
                   </td>
-                  <td className="px-2 sm:px-4 py-3 sm:py-4 text-right text-gray-400 hidden sm:table-cell">
+                  <td className="px-3 sm:px-4 py-4 text-right text-gray-400 hidden sm:table-cell">
                     {winPct.toFixed(1)}%
                   </td>
-                  <td className="px-2 sm:px-4 py-3 sm:py-4 text-right font-medium text-green-400 text-sm sm:text-base">
+                  <td className="px-3 sm:px-4 py-4 text-right font-medium text-emerald-500">
                     {pointsFor.toFixed(1)}
                   </td>
-                  <td className="px-2 sm:px-4 py-3 sm:py-4 text-right text-gray-400 hidden sm:table-cell">
+                  <td className="px-3 sm:px-4 py-4 text-right text-gray-400 hidden sm:table-cell">
                     {pointsAgainst.toFixed(1)}
                   </td>
                   <td
-                    className={`px-2 sm:px-4 py-3 sm:py-4 text-right font-medium hidden sm:table-cell ${
-                      diff > 0 ? 'text-green-400' : diff < 0 ? 'text-red-400' : ''
+                    className={`px-3 sm:px-4 py-4 text-right font-medium hidden sm:table-cell ${
+                      diff > 0 ? 'text-emerald-500' : diff < 0 ? 'text-red-500' : 'text-gray-400'
                     }`}
                   >
                     {diff > 0 ? '+' : ''}
@@ -160,10 +168,14 @@ export default async function TeamsPage({
         </table>
       </div>
 
-      <div className="flex gap-4 text-sm text-gray-400">
+      <div className="flex gap-6 text-sm text-gray-500">
         <div className="flex items-center gap-2">
-          <span className="w-4 h-4 rounded bg-green-900/30"></span>
+          <span className="w-3 h-3 rounded bg-emerald-800"></span>
           <span>Playoff Position</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="w-3 h-3 rounded bg-amber-500"></span>
+          <span>Your Team</span>
         </div>
       </div>
     </div>

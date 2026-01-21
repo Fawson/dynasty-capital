@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
+import { Skeleton, SkeletonMatchup } from '@/components/Skeleton'
 import { SleeperMatchup, SleeperRoster, LeagueUser, SleeperLeague } from '@/lib/types'
 import { getCurrentWeek, getAvatarUrl } from '@/lib/sleeper'
 
@@ -106,8 +107,19 @@ export default function MatchupsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-400">Loading matchups...</div>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <Skeleton className="h-8 w-32 mb-2" />
+            <Skeleton className="h-4 w-40" />
+          </div>
+          <Skeleton className="h-10 w-48" />
+        </div>
+        <div className="grid gap-4">
+          {[1, 2, 3, 4, 5, 6].map(i => (
+            <SkeletonMatchup key={i} />
+          ))}
+        </div>
       </div>
     )
   }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
+import { Skeleton, SkeletonCard } from '@/components/Skeleton'
 import { SleeperPlayer, SleeperRoster, LeagueUser, TradedPick } from '@/lib/types'
 import {
   getSleeperPlayerValue,
@@ -254,8 +255,16 @@ export default function ValueAnalyzerPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-gray-400">Loading team values...</div>
+      <div className="space-y-6">
+        <div>
+          <Skeleton className="h-8 w-48 mb-2" />
+          <Skeleton className="h-4 w-80" />
+        </div>
+        <div className="grid gap-4">
+          {[1, 2, 3, 4, 5, 6].map(i => (
+            <SkeletonCard key={i} />
+          ))}
+        </div>
       </div>
     )
   }

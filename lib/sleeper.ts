@@ -93,11 +93,10 @@ export function getCurrentWeek(): number {
 }
 
 // Get avatar URL
-export function getAvatarUrl(avatarId: string | null, type: 'user' | 'league' = 'user'): string {
+export function getAvatarUrl(avatarId: string | null | undefined, type: 'user' | 'league' = 'user'): string {
   if (!avatarId) {
-    return type === 'user'
-      ? 'https://sleepercdn.com/images/v2/icons/player_default.webp'
-      : 'https://sleepercdn.com/images/v2/icons/league_default.webp'
+    // Use data URI placeholders for missing avatars
+    return 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Crect fill="%230f3460" width="100" height="100"/%3E%3Ctext x="50" y="60" text-anchor="middle" fill="%23666" font-size="40"%3E?%3C/text%3E%3C/svg%3E'
   }
   return `https://sleepercdn.com/avatars/thumbs/${avatarId}`
 }

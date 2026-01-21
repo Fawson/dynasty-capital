@@ -62,6 +62,24 @@ export default function AllPlayersTab({
 
   const positions = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DEF']
 
+  // Calculate position ranks
+  const positionRanks = useMemo(() => {
+    const ranks = new Map<string, number>()
+    const positions = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF']
+
+    positions.forEach(pos => {
+      const posPlayers = [...players]
+        .filter(p => p.position === pos)
+        .sort((a, b) => b.value - a.value)
+
+      posPlayers.forEach((player, index) => {
+        ranks.set(player.player_id, index + 1)
+      })
+    })
+
+    return ranks
+  }, [players])
+
   const filteredPlayers = players
     .filter((p) => filter === 'ALL' || p.position === filter)
     .sort((a, b) => {
@@ -145,6 +163,7 @@ export default function AllPlayersTab({
           <thead className="bg-sleeper-accent">
             <tr>
               <th className="px-3 sm:px-4 py-3 text-left text-sm font-semibold text-gray-300">Rank</th>
+              <th className="px-3 sm:px-4 py-3 text-left text-sm font-semibold text-gray-300">Pos. Rank</th>
               <th className="px-3 sm:px-4 py-3 text-left text-sm font-semibold text-gray-300">Player</th>
               <th className="px-3 sm:px-4 py-3 text-left text-sm font-semibold text-gray-300">Pos</th>
               <th className="px-3 sm:px-4 py-3 text-left text-sm font-semibold text-gray-300 hidden sm:table-cell">Team</th>
@@ -160,6 +179,7 @@ export default function AllPlayersTab({
                 onClick={() => onSelectPlayer?.(player.player_id)}
               >
                 <td className="px-3 sm:px-4 py-3 text-gray-500">{index + 1}</td>
+                <td className="px-3 sm:px-4 py-3 text-gray-400">{player.position}{positionRanks.get(player.player_id)}</td>
                 <td className="px-3 sm:px-4 py-3">
                   <span className="font-medium hover:text-sleeper-highlight transition-colors">
                     {player.full_name}
