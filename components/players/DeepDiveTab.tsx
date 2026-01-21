@@ -148,6 +148,11 @@ function LineChart({
     }
   })
 
+  // Get the team color for the line (use first team found, or default color)
+  const lineColor = showTeamColors && teamsInOrder.length > 0
+    ? (NFL_TEAM_COLORS[teamsInOrder[0]] || color)
+    : color
+
   // Calculate linear regression for trend line using all data points with their original indices
   const nonZeroData = chartData.filter(d => d.value > 0)
   const regressionData = nonZeroData.map(d => ({ index: d.index, value: d.value }))
@@ -213,8 +218,8 @@ function LineChart({
         >
           <defs>
             <linearGradient id={`gradient-${label}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={color} stopOpacity={0.4} />
-              <stop offset="95%" stopColor={color} stopOpacity={0.05} />
+              <stop offset="5%" stopColor={lineColor} stopOpacity={0.4} />
+              <stop offset="95%" stopColor={lineColor} stopOpacity={0.05} />
             </linearGradient>
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
@@ -243,11 +248,11 @@ function LineChart({
           <Area
             type="monotone"
             dataKey="value"
-            stroke={showTeamColors ? '#6B7280' : color}
+            stroke={lineColor}
             strokeWidth={2}
             fill={`url(#gradient-${label})`}
-            dot={showTeamColors ? <CustomDot /> : false}
-            activeDot={showTeamColors ? { r: 6, stroke: '#1f2937', strokeWidth: 2 } : false}
+            dot={false}
+            activeDot={{ r: 5, fill: lineColor, stroke: '#1f2937', strokeWidth: 2 }}
           />
           {/* Linear best fit trend line - only show with 5+ data points */}
           {nonZeroData.length >= 5 && (
@@ -265,7 +270,7 @@ function LineChart({
             <Brush
               dataKey="name"
               height={30}
-              stroke={color}
+              stroke={lineColor}
               fill="#1f2937"
               tickFormatter={() => ''}
             />
