@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import { getAllPlayerValues } from '@/lib/fantasypros'
 
+// Prevent caching to ensure randomization works
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 const HISTORICAL_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1n5aqip8iFCpltO8deiS7q9m3u_dFvKTZpwzfZXVTpgs/export?format=csv&gid=699541356'
 
 // Cache the parsed data
@@ -54,10 +58,17 @@ async function fetchHistoricalData() {
   return cachedData
 }
 
+// Use crypto for better randomization
+function getRandomInt(max: number): number {
+  const array = new Uint32Array(1)
+  crypto.getRandomValues(array)
+  return array[0] % max
+}
+
 function shuffleArray<T>(array: T[]): T[] {
   const shuffled = [...array]
   for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
+    const j = getRandomInt(i + 1)
     ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
   }
   return shuffled
@@ -96,8 +107,8 @@ export async function GET() {
       return NextResponse.json({ error: 'Not enough players with history' }, { status: 500 })
     }
 
-    // Pick a random correct answer
-    const correctPlayerData = eligiblePlayers[Math.floor(Math.random() * eligiblePlayers.length)]
+    // Pick a random correct answer using crypto
+    const correctPlayerData = eligiblePlayers[getRandomInt(eligiblePlayers.length)]
     const correctHistoryName = correctPlayerData.historyName
     const correctDbInfo = correctPlayerData.dbInfo
 
@@ -110,39 +121,44 @@ export async function GET() {
       }))
       .reverse() // Oldest first
 
-    // Get 3 decoy players - prioritize same position and similar value
-    const otherPlayers = eligiblePlayers.filter(p =>
-      p.dbInfo.name !== correctDbInfo.name
-    )
+    // Calculate career trajectory info for correct player
+    const correctValues = correctHistory.map(h => h.value)
+    const correctAvgValue = correctValues.reduce((a, b) => a + b, 0) / correctValues.length
+    const correctMaxValue = Math.max(...correctValues)
+    const correctCurrentValue = correctValues[correctValues.length - 1] || 0
 
-    // Separate by position
-    const samePosition = otherPlayers.filter(p => p.dbInfo.position === correctDbInfo.position)
-    const diffPosition = otherPlayers.filter(p => p.dbInfo.position !== correctDbInfo.position)
+    // Get other players and calculate their similarity scores
+    const otherPlayers = eligiblePlayers
+      .filter(p => p.dbInfo.name !== correctDbInfo.name)
+      .map(p => {
+        // Get this player's history for trajectory comparison
+        const playerHistory = data.rows
+          .filter(row => row.values[p.historyName] !== undefined)
+          .map(row => row.values[p.historyName])
 
-    // Sort same position by value similarity
-    samePosition.sort((a, b) =>
-      Math.abs(a.dbInfo.value - correctDbInfo.value) - Math.abs(b.dbInfo.value - correctDbInfo.value)
-    )
+        const avgValue = playerHistory.length > 0
+          ? playerHistory.reduce((a, b) => a + b, 0) / playerHistory.length
+          : p.dbInfo.value
+        const maxValue = playerHistory.length > 0 ? Math.max(...playerHistory) : p.dbInfo.value
 
-    // Sort different position by value similarity
-    diffPosition.sort((a, b) =>
-      Math.abs(a.dbInfo.value - correctDbInfo.value) - Math.abs(b.dbInfo.value - correctDbInfo.value)
-    )
+        // Calculate similarity score (lower is more similar)
+        const positionMatch = p.dbInfo.position === correctDbInfo.position ? 0 : 1000
+        const valueDiff = Math.abs(avgValue - correctAvgValue)
+        const maxDiff = Math.abs(maxValue - correctMaxValue)
+        const currentDiff = Math.abs(p.dbInfo.value - correctCurrentValue)
 
-    // Select decoys: prefer same position, mix in some from different positions
-    let decoyPool: typeof eligiblePlayers = []
+        const similarityScore = positionMatch + valueDiff * 0.3 + maxDiff * 0.3 + currentDiff * 0.4
 
-    // Take players with similar values (skip the very closest to make it harder)
-    if (samePosition.length >= 3) {
-      // Skip top 1, take next several from same position
-      decoyPool = samePosition.slice(1, 8)
-    } else {
-      // Mix same position and similar-value different position
-      decoyPool = [...samePosition, ...diffPosition.slice(0, 10)]
-    }
+        return { ...p, similarityScore, avgValue }
+      })
 
-    // Shuffle and take 3
-    const selectedDecoys = shuffleArray(decoyPool).slice(0, 3)
+    // Sort by similarity (most similar first)
+    otherPlayers.sort((a, b) => a.similarityScore - b.similarityScore)
+
+    // Take top similar players, but add some randomness
+    // Pick from top 15 most similar players to add variety
+    const candidatePool = otherPlayers.slice(0, Math.min(15, otherPlayers.length))
+    const selectedDecoys = shuffleArray(candidatePool).slice(0, 3)
 
     // Create options array with correct answer and decoys
     const options = shuffleArray([
