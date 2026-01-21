@@ -450,6 +450,21 @@ export default function DeepDiveTab({
       const ownership = ownershipMap.get(player.player_id)
       const seasonData: SeasonStats[] = []
 
+      // Fetch team history from ESPN (if player has ESPN ID)
+      let teamHistory: Record<string, string> = {}
+      const espnId = (player as any).espn_id
+      if (espnId) {
+        try {
+          const teamHistoryRes = await fetch(`/api/player-team-history?espnId=${espnId}`)
+          if (teamHistoryRes.ok) {
+            const data = await teamHistoryRes.json()
+            teamHistory = data.teamHistory || {}
+          }
+        } catch {
+          // Fall back to current team if team history fetch fails
+        }
+      }
+
       // Fetch stats for last 3 seasons (reduced to speed up loading)
       const seasons = Array.from({ length: 3 }, (_, i) => currentSeasonNum - i)
 
@@ -481,8 +496,8 @@ export default function DeepDiveTab({
 
         const results = await Promise.all(weekPromises)
 
-        // Use player's current team for coloring (Sleeper API doesn't provide historical team data)
-        const playerTeam = player.team || 'FA'
+        // Default to player's current team
+        const defaultTeam = player.team || 'FA'
 
         results.forEach(({ week, data }) => {
           if (data[player.player_id]) {
@@ -493,7 +508,9 @@ export default function DeepDiveTab({
             if (offSnp && tmOffSnp && tmOffSnp > 0) {
               stats.snap_share = (offSnp / tmOffSnp) * 100
             }
-            weeklyStats.push({ week, stats, team: playerTeam })
+            // Use team from ESPN history if available, otherwise use current team
+            const team = teamHistory[`${season}-${week}`] || defaultTeam
+            weeklyStats.push({ week, stats, team })
           }
         })
 
