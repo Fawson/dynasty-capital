@@ -21,11 +21,14 @@ export async function GET(request: NextRequest) {
     // Map of season-week to team abbreviation
     const teamHistory: Record<string, string> = {}
 
-    // Fetch last 3 seasons
+    // Fetch last 6 seasons (2020-2025) to match stats data
     const currentYear = new Date().getFullYear()
-    const seasons = [currentYear, currentYear - 1, currentYear - 2]
+    const seasons = Array.from({ length: 6 }, (_, i) => currentYear - i)
 
-    for (const season of seasons) {
+    // Process all seasons in parallel for speed
+    const seasonPromises = seasons.map(async (season) => {
+      const seasonResults: { season: number; week: number; team: string }[] = []
+
       try {
         // Fetch ESPN gamelog for this season
         const gamelogRes = await fetch(
@@ -33,91 +36,90 @@ export async function GET(request: NextRequest) {
           { next: { revalidate: 86400 } } // Cache for 24 hours
         )
 
-        if (!gamelogRes.ok) continue
+        if (!gamelogRes.ok) return seasonResults
 
         const gamelog = await gamelogRes.json()
         const events = gamelog?.seasonTypes?.[0]?.categories?.[0]?.events || []
 
-        // Fetch game details for each event to get team info
-        // Process in batches of 5 to avoid rate limiting
-        for (let i = 0; i < events.length; i += 5) {
-          const batch = events.slice(i, i + 5)
+        // Fetch all game details in parallel (no batching for speed)
+        const gamePromises = events.map(async (event: { eventId: string }) => {
+          try {
+            const gameRes = await fetch(
+              `https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=${event.eventId}`,
+              { next: { revalidate: 86400 } }
+            )
 
-          const gamePromises = batch.map(async (event: { eventId: string }) => {
-            try {
-              const gameRes = await fetch(
-                `https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=${event.eventId}`,
-                { next: { revalidate: 86400 } }
-              )
+            if (!gameRes.ok) return null
 
-              if (!gameRes.ok) return null
+            const game = await gameRes.json()
+            const week = game?.header?.week
+            const homeTeam = game?.boxscore?.teams?.[0]?.team?.abbreviation
+            const awayTeam = game?.boxscore?.teams?.[1]?.team?.abbreviation
 
-              const game = await gameRes.json()
-              const week = game?.header?.week
-              const homeTeam = game?.boxscore?.teams?.[0]?.team?.abbreviation
-              const awayTeam = game?.boxscore?.teams?.[1]?.team?.abbreviation
+            if (!week || !homeTeam || !awayTeam) return null
 
-              if (!week || !homeTeam || !awayTeam) return null
+            // Check which team the player was on by looking at the roster/statistics
+            const homeStats = game?.boxscore?.players?.[0]?.statistics || []
+            const awayStats = game?.boxscore?.players?.[1]?.statistics || []
 
-              // Check which team the player was on by looking at the roster/statistics
-              // The player's team is whichever team they have stats for
-              const homeStats = game?.boxscore?.players?.[0]?.statistics || []
-              const awayStats = game?.boxscore?.players?.[1]?.statistics || []
+            let playerTeam: string | null = null
 
-              // Check if player is in home team stats
-              let playerTeam: string | null = null
+            // Check if player is in home team stats
+            for (const stat of homeStats) {
+              const athletes = stat?.athletes || []
+              for (const athlete of athletes) {
+                if (athlete?.athlete?.id === espnId) {
+                  playerTeam = homeTeam
+                  break
+                }
+              }
+              if (playerTeam) break
+            }
 
-              for (const stat of homeStats) {
+            // If not found in home, check away
+            if (!playerTeam) {
+              for (const stat of awayStats) {
                 const athletes = stat?.athletes || []
                 for (const athlete of athletes) {
                   if (athlete?.athlete?.id === espnId) {
-                    playerTeam = homeTeam
+                    playerTeam = awayTeam
                     break
-                  }
-                }
-                if (playerTeam) break
-              }
-
-              // If not found in home, check away
-              if (!playerTeam) {
-                for (const stat of awayStats) {
-                  const athletes = stat?.athletes || []
-                  for (const athlete of athletes) {
-                    if (athlete?.athlete?.id === espnId) {
-                      playerTeam = awayTeam
-                      break
-                    }
                   }
                   if (playerTeam) break
                 }
               }
-
-              if (playerTeam && week) {
-                return { season, week, team: playerTeam }
-              }
-              return null
-            } catch {
-              return null
             }
-          })
 
-          const results = await Promise.all(gamePromises)
-          results.forEach(result => {
-            if (result) {
-              teamHistory[`${result.season}-${result.week}`] = result.team
+            if (playerTeam && week) {
+              return { season, week, team: playerTeam }
             }
-          })
-
-          // Small delay between batches to avoid rate limiting
-          if (i + 5 < events.length) {
-            await new Promise(resolve => setTimeout(resolve, 100))
+            return null
+          } catch {
+            return null
           }
-        }
+        })
+
+        const results = await Promise.all(gamePromises)
+        results.forEach(result => {
+          if (result) {
+            seasonResults.push(result)
+          }
+        })
       } catch {
-        // Continue to next season if this one fails
-        continue
+        // Return empty for this season
       }
-    }
+
+      return seasonResults
+    })
+
+    const allSeasonResults = await Promise.all(seasonPromises)
+
+    // Combine all results into teamHistory
+    allSeasonResults.flat().forEach(result => {
+      if (result) {
+        teamHistory[`${result.season}-${result.week}`] = result.team
+      }
+    })
 
     // Cache the result
     teamHistoryCache.set(espnId, { data: teamHistory, timestamp: Date.now() })
