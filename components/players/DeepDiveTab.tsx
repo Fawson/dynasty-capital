@@ -455,34 +455,29 @@ export default function DeepDiveTab({
         // Determine how many weeks to fetch
         const weeksToFetch = season === currentSeasonNum ? getCurrentWeek() : 18
 
-        // Fetch all weeks for this season in parallel (stats + projections for team info)
-        const weekPromises = Array.from({ length: weeksToFetch }, (_, i) => i + 1).map(async week => {
-          const [statsRes, projRes] = await Promise.all([
-            fetch(`https://api.sleeper.app/v1/stats/nfl/regular/${season}/${week}`)
-              .then(res => res.ok ? res.json() : ({} as Record<string, PlayerStats>))
-              .catch(() => ({} as Record<string, PlayerStats>)),
-            fetch(`https://api.sleeper.app/v1/projections/nfl/regular/${season}/${week}`)
-              .then(res => res.ok ? res.json() : ({} as Record<string, any>))
-              .catch(() => ({} as Record<string, any>))
-          ])
-          return { week, statsData: statsRes as Record<string, PlayerStats>, projData: projRes as Record<string, any> }
-        })
+        // Fetch all weeks for this season in parallel
+        const weekPromises = Array.from({ length: weeksToFetch }, (_, i) => i + 1).map(week =>
+          fetch(`https://api.sleeper.app/v1/stats/nfl/regular/${season}/${week}`)
+            .then(res => res.ok ? res.json() : ({} as Record<string, PlayerStats>))
+            .then((data: Record<string, PlayerStats>) => ({ week, data }))
+            .catch(() => ({ week, data: {} as Record<string, PlayerStats> }))
+        )
 
         const results = await Promise.all(weekPromises)
 
-        results.forEach(({ week, statsData, projData }) => {
-          if (statsData[player.player_id]) {
-            const stats = { ...statsData[player.player_id] }
+        // Use player's current team for coloring (Sleeper API doesn't provide historical team data)
+        const playerTeam = player.team || 'FA'
+
+        results.forEach(({ week, data }) => {
+          if (data[player.player_id]) {
+            const stats = { ...data[player.player_id] }
             // Compute snap share percentage
             const offSnp = stats.off_snp as number | undefined
             const tmOffSnp = stats.tm_off_snp as number | undefined
             if (offSnp && tmOffSnp && tmOffSnp > 0) {
               stats.snap_share = (offSnp / tmOffSnp) * 100
             }
-            // Get team from projections (includes team info)
-            const projections = projData[player.player_id]
-            const team = projections?.team as string | undefined
-            weeklyStats.push({ week, stats, team })
+            weeklyStats.push({ week, stats, team: playerTeam })
           }
         })
 
