@@ -139,10 +139,10 @@ export default function NewsTab({ allPlayers, rosters, users }: NewsTabProps) {
                   <span>{selectedPlayer.years_exp} {selectedPlayer.years_exp === 1 ? 'year' : 'years'}</span>
                 </div>
               )}
-              {selectedPlayer.college && (
+              {(selectedPlayer as any).college && (
                 <div className="flex justify-between">
                   <span className="text-gray-500">College</span>
-                  <span>{selectedPlayer.college}</span>
+                  <span>{(selectedPlayer as any).college}</span>
                 </div>
               )}
             </div>
