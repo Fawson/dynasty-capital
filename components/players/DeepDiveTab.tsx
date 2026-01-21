@@ -465,39 +465,39 @@ export default function DeepDiveTab({
         }
       }
 
-      // Fetch stats for last 3 seasons (reduced to speed up loading)
-      const seasons = Array.from({ length: 3 }, (_, i) => currentSeasonNum - i)
+      // Fetch stats for last 6 seasons (back to 2020) - all in parallel for speed
+      const seasons = Array.from({ length: 6 }, (_, i) => currentSeasonNum - i)
 
-      for (const season of seasons) {
+      // Fetch with timeout helper
+      const fetchWithTimeout = async (url: string, timeout = 8000): Promise<Record<string, PlayerStats>> => {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), timeout)
+        try {
+          const res = await fetch(url, { signal: controller.signal })
+          clearTimeout(timeoutId)
+          return res.ok ? res.json() : {}
+        } catch {
+          clearTimeout(timeoutId)
+          return {}
+        }
+      }
+
+      // Default team
+      const defaultTeam = player.team || 'FA'
+
+      // Fetch all seasons in parallel
+      const seasonPromises = seasons.map(async (season) => {
+        const weeksToFetch = season === currentSeasonNum ? getCurrentWeek() : 18
         const weeklyStats: WeeklyStats[] = []
         const totals: PlayerStats = {}
 
-        // Determine how many weeks to fetch
-        const weeksToFetch = season === currentSeasonNum ? getCurrentWeek() : 18
-
-        // Fetch all weeks for this season in parallel with timeout
-        const fetchWithTimeout = async (url: string, timeout = 10000): Promise<Record<string, PlayerStats>> => {
-          const controller = new AbortController()
-          const timeoutId = setTimeout(() => controller.abort(), timeout)
-          try {
-            const res = await fetch(url, { signal: controller.signal })
-            clearTimeout(timeoutId)
-            return res.ok ? res.json() : {}
-          } catch {
-            clearTimeout(timeoutId)
-            return {}
-          }
-        }
-
+        // Fetch all weeks for this season in parallel
         const weekPromises = Array.from({ length: weeksToFetch }, (_, i) => i + 1).map(async week => {
           const data = await fetchWithTimeout(`https://api.sleeper.app/v1/stats/nfl/regular/${season}/${week}`)
           return { week, data }
         })
 
         const results = await Promise.all(weekPromises)
-
-        // Default to player's current team
-        const defaultTeam = player.team || 'FA'
 
         results.forEach(({ week, data }) => {
           if (data[player.player_id]) {
@@ -523,7 +523,6 @@ export default function DeepDiveTab({
           Object.entries(stats).forEach(([key, value]) => {
             if (typeof value === 'number') {
               if (key === 'snap_share') {
-                // Track for averaging later
                 snapShareSum += value
                 snapShareCount++
               } else {
@@ -532,15 +531,21 @@ export default function DeepDiveTab({
             }
           })
         })
-        // Calculate average snap share for the season
         if (snapShareCount > 0) {
           totals.snap_share = snapShareSum / snapShareCount
         }
 
-        if (weeklyStats.length > 0) {
-          seasonData.push({ season: season.toString(), weeklyStats, totals })
+        return { season: season.toString(), weeklyStats, totals }
+      })
+
+      const allSeasonData = await Promise.all(seasonPromises)
+
+      // Filter out empty seasons and add to seasonData
+      allSeasonData.forEach(data => {
+        if (data.weeklyStats.length > 0) {
+          seasonData.push(data)
         }
-      }
+      })
 
       setSelectedPlayer({
         ...player,
