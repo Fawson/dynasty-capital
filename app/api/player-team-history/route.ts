@@ -39,7 +39,34 @@ export async function GET(request: NextRequest) {
         if (!gamelogRes.ok) return seasonResults
 
         const gamelog = await gamelogRes.json()
-        const events = gamelog?.seasonTypes?.[0]?.categories?.[0]?.events || []
+
+        // ESPN gamelog has multiple seasonTypes (Postseason, Regular Season)
+        // We want the Regular Season which typically has splitType "2"
+        // Collect events from all season types but prefer regular season
+        let events: { eventId: string }[] = []
+        let displayTeam: string | null = null
+
+        const seasonTypes = gamelog?.seasonTypes || []
+        for (const seasonType of seasonTypes) {
+          // Check if this is regular season (has displayTeam or splitType "2")
+          if (seasonType.displayTeam) {
+            displayTeam = seasonType.displayTeam
+          }
+          const categories = seasonType?.categories || []
+          for (const category of categories) {
+            // Prefer regular season (splitType "2") over postseason (splitType "3")
+            if (category.splitType === "2" || category.displayName?.includes("Regular")) {
+              events = category.events || []
+              break
+            }
+          }
+          if (events.length > 0) break
+        }
+
+        // If no regular season found, try first available
+        if (events.length === 0 && seasonTypes.length > 0) {
+          events = seasonTypes[0]?.categories?.[0]?.events || []
+        }
 
         // Fetch all game details in parallel (no batching for speed)
         const gamePromises = events.map(async (event: { eventId: string }) => {
@@ -65,29 +92,32 @@ export async function GET(request: NextRequest) {
             let playerTeam: string | null = null
 
             // Check if player is in home team stats
-            for (const stat of homeStats) {
+            outerHome: for (const stat of homeStats) {
               const athletes = stat?.athletes || []
               for (const athlete of athletes) {
                 if (athlete?.athlete?.id === espnId) {
                   playerTeam = homeTeam
-                  break
+                  break outerHome
                 }
               }
-              if (playerTeam) break
             }
 
             // If not found in home, check away
             if (!playerTeam) {
-              for (const stat of awayStats) {
+              outerAway: for (const stat of awayStats) {
                 const athletes = stat?.athletes || []
                 for (const athlete of athletes) {
                   if (athlete?.athlete?.id === espnId) {
                     playerTeam = awayTeam
-                    break
+                    break outerAway
                   }
-                  if (playerTeam) break
                 }
               }
+            }
+
+            // Use displayTeam from gamelog as fallback
+            if (!playerTeam && displayTeam) {
+              playerTeam = displayTeam
             }
 
             if (playerTeam && week) {
