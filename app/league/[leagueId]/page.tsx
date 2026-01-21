@@ -92,7 +92,16 @@ export default async function LeagueOverview({
       <div className="flex flex-wrap gap-6 py-4 px-5 bg-gray-800 rounded-lg border-l-4 border-l-amber-500">
         <div>
           <p className="text-xs text-gray-500 uppercase tracking-wider">Leader</p>
-          <p className="font-semibold">{standings[0]?.user?.display_name || 'Unknown'}</p>
+          <p className="font-semibold flex items-center gap-1.5">
+            <svg
+              className="w-4 h-4 text-amber-500"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+            >
+              <path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5zm14 3c0 .6-.4 1-1 1H6c-.6 0-1-.4-1-1v-1h14v1z" />
+            </svg>
+            {standings[0]?.user?.display_name || 'Unknown'}
+          </p>
         </div>
         <div className="hidden sm:block w-px bg-gray-700"></div>
         <div>
@@ -169,10 +178,19 @@ export default async function LeagueOverview({
                       </span>
                     </td>
                     <td className="px-4 py-4">
-                      <p className="font-medium">
+                      <p className="font-medium flex items-center gap-1.5">
                         {roster.user?.metadata?.team_name ||
                           roster.user?.display_name ||
                           'Unknown Team'}
+                        {index === 0 && (
+                          <svg
+                            className="w-4 h-4 text-amber-500"
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                          >
+                            <path d="M5 16L3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5zm14 3c0 .6-.4 1-1 1H6c-.6 0-1-.4-1-1v-1h14v1z" />
+                          </svg>
+                        )}
                       </p>
                       {roster.user?.metadata?.team_name && roster.user?.display_name && (
                         <p className="text-gray-500 text-sm">{roster.user.display_name}</p>
