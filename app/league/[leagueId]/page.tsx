@@ -62,6 +62,21 @@ export default async function LeagueOverview({
   )
   const avgPointsPerTeam = totalPoints / rosters.length
 
+  // Determine scoring format from scoring_settings
+  const scoringSettings = league.scoring_settings || {}
+  const recPoints = scoringSettings.rec || 0
+  const scoringFormat = recPoints === 1 ? 'PPR' : recPoints === 0.5 ? 'Half PPR' : recPoints === 0 ? 'Standard' : `${recPoints} PPR`
+
+  // Check for superflex (QB in flex spots)
+  const rosterPositions = league.roster_positions || []
+  const hasSuperFlex = rosterPositions.includes('SUPER_FLEX')
+  const hasTE_Premium = (scoringSettings.bonus_rec_te || 0) > 0
+
+  // Build format string
+  const formatParts = [scoringFormat]
+  if (hasSuperFlex) formatParts.push('SF')
+  if (hasTE_Premium) formatParts.push('TEP')
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -69,7 +84,7 @@ export default async function LeagueOverview({
         <h1 className="text-3xl font-bold mb-1">{league.name}</h1>
         <p className="text-gray-400">
           {league.season} Season &bull; {league.total_rosters} Teams &bull; Week{' '}
-          {getCurrentWeek()}
+          {getCurrentWeek()} &bull; {formatParts.join(' / ')}
         </p>
       </div>
 
@@ -95,23 +110,7 @@ export default async function LeagueOverview({
       </div>
 
       {/* Quick Links */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Link
-          href={`/league/${leagueId}/standings${userId ? `?userId=${userId}` : ''}`}
-          className="bg-gray-800 p-4 rounded-lg border border-gray-700 hover:border-amber-500 transition-colors text-center group"
-        >
-          <p className="text-2xl mb-1 group-hover:text-amber-500 transition-colors">1st</p>
-          <p className="text-gray-500 text-sm">Standings</p>
-        </Link>
-
-        <Link
-          href={`/league/${leagueId}/teams${userId ? `?userId=${userId}` : ''}`}
-          className="bg-gray-800 p-4 rounded-lg border border-gray-700 hover:border-amber-500 transition-colors text-center group"
-        >
-          <p className="text-2xl mb-1 group-hover:text-amber-500 transition-colors">{league.total_rosters}</p>
-          <p className="text-gray-500 text-sm">Teams</p>
-        </Link>
-
+      <div className="grid grid-cols-2 gap-3">
         <Link
           href={`/league/${leagueId}/trade${userId ? `?userId=${userId}` : ''}`}
           className="bg-gray-800 p-4 rounded-lg border border-gray-700 hover:border-amber-500 transition-colors text-center group"
