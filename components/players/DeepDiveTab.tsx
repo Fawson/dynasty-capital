@@ -459,13 +459,13 @@ export default function DeepDiveTab({
         const weekPromises = Array.from({ length: weeksToFetch }, (_, i) => i + 1).map(async week => {
           const [statsRes, projRes] = await Promise.all([
             fetch(`https://api.sleeper.app/v1/stats/nfl/regular/${season}/${week}`)
-              .then(res => res.ok ? res.json() : {})
-              .catch(() => ({})),
+              .then(res => res.ok ? res.json() : ({} as Record<string, PlayerStats>))
+              .catch(() => ({} as Record<string, PlayerStats>)),
             fetch(`https://api.sleeper.app/v1/projections/nfl/regular/${season}/${week}`)
-              .then(res => res.ok ? res.json() : {})
-              .catch(() => ({}))
+              .then(res => res.ok ? res.json() : ({} as Record<string, any>))
+              .catch(() => ({} as Record<string, any>))
           ])
-          return { week, statsData: statsRes, projData: projRes }
+          return { week, statsData: statsRes as Record<string, PlayerStats>, projData: projRes as Record<string, any> }
         })
 
         const results = await Promise.all(weekPromises)
