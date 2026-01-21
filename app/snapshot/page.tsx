@@ -218,7 +218,7 @@ export default function SnapshotGame() {
                         borderRadius: '8px',
                       }}
                       labelStyle={{ color: '#9ca3af' }}
-                      formatter={(value: number) => [value.toLocaleString(), 'Value']}
+                      formatter={(value) => [typeof value === 'number' ? value.toLocaleString() : '0', 'Value']}
                     />
                     <ReferenceLine y={5000} stroke="#374151" strokeDasharray="3 3" />
                     <Line
