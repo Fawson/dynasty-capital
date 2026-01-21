@@ -37,7 +37,7 @@ export default function NewsTab({ allPlayers, rosters, users }: NewsTabProps) {
     if (!searchQuery.trim() || searchQuery.length < 2) return []
 
     const query = searchQuery.toLowerCase()
-    const results: Array<SleeperPlayer & { value: number; ownerName: string | null }>[] = []
+    const results: Array<SleeperPlayer & { value: number; ownerName: string | null }> = []
 
     Object.values(allPlayers).forEach((player) => {
       if (!player.position || !['QB', 'RB', 'WR', 'TE'].includes(player.position)) return
