@@ -35,6 +35,7 @@ interface PlayerStats {
 interface WeeklyStats {
   week: number
   stats: PlayerStats
+  team?: string
 }
 
 interface SeasonStats {
@@ -82,6 +83,19 @@ const STAT_CONFIG: Record<string, { label: string; format: (v: number) => string
   fum_lost: { label: 'Fumbles Lost', format: (v) => v.toFixed(0), positions: ['QB', 'RB', 'WR', 'TE'], higherIsBetter: false },
 }
 
+// NFL Team Colors
+const NFL_TEAM_COLORS: Record<string, string> = {
+  ARI: '#97233F', ATL: '#A71930', BAL: '#241773', BUF: '#00338D',
+  CAR: '#0085CA', CHI: '#0B162A', CIN: '#FB4F14', CLE: '#311D00',
+  DAL: '#003594', DEN: '#FB4F14', DET: '#0076B6', GB: '#203731',
+  HOU: '#03202F', IND: '#002C5F', JAX: '#006778', KC: '#E31837',
+  LAC: '#0080C6', LAR: '#003594', LV: '#A5ACAF', MIA: '#008E97',
+  MIN: '#4F2683', NE: '#002244', NO: '#D3BC8D', NYG: '#0B2265',
+  NYJ: '#125740', PHI: '#004C54', PIT: '#FFB612', SF: '#AA0000',
+  SEA: '#002244', TB: '#D50A0A', TEN: '#0C2340', WAS: '#5A1414',
+  FA: '#6B7280', // Free Agent - gray
+}
+
 // Linear regression calculation
 function calculateLinearRegression(data: { index: number; value: number }[]): { slope: number; intercept: number } {
   const n = data.length
@@ -98,7 +112,7 @@ function calculateLinearRegression(data: { index: number; value: number }[]): { 
   return { slope: isNaN(slope) ? 0 : slope, intercept: isNaN(intercept) ? 0 : intercept }
 }
 
-// Interactive Line Chart Component with zoom/pan
+// Interactive Line Chart Component with zoom/pan and team colors
 function LineChart({
   data,
   label,
@@ -106,13 +120,15 @@ function LineChart({
   height = 280,
   color = '#00ceb8',
   showBrush = true,
+  showTeamColors = false,
 }: {
-  data: { x: string; y: number }[]
+  data: { x: string; y: number; team?: string }[]
   label: string
   format?: (v: number) => string
   height?: number
   color?: string
   showBrush?: boolean
+  showTeamColors?: boolean
 }) {
   if (data.length === 0) return null
 
@@ -121,7 +137,16 @@ function LineChart({
     name: d.x,
     value: d.y,
     index: i,
+    team: d.team || 'FA',
   }))
+
+  // Get unique teams for legend (in order of appearance)
+  const teamsInOrder: string[] = []
+  chartData.forEach(d => {
+    if (d.team && !teamsInOrder.includes(d.team)) {
+      teamsInOrder.push(d.team)
+    }
+  })
 
   // Calculate linear regression for trend line using all data points with their original indices
   const nonZeroData = chartData.filter(d => d.value > 0)
@@ -138,17 +163,33 @@ function LineChart({
     }
   })
 
-  // Custom tooltip
+  // Custom tooltip with team info
   const CustomTooltip = ({ active, payload, label: tooltipLabel }: any) => {
     if (active && payload && payload.length) {
+      const team = payload[0]?.payload?.team
+      const teamColor = showTeamColors && team ? NFL_TEAM_COLORS[team] || '#6B7280' : color
       return (
         <div className="bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 shadow-lg">
           <p className="text-gray-400 text-xs">{tooltipLabel}</p>
           <p className="text-white font-bold">{format(payload[0].value)}</p>
+          {showTeamColors && team && (
+            <p className="text-xs mt-1" style={{ color: teamColor }}>{team}</p>
+          )}
         </div>
       )
     }
     return null
+  }
+
+  // Custom dot renderer for team colors
+  const CustomDot = (props: any) => {
+    const { cx, cy, payload } = props
+    if (!cx || !cy || !payload || payload.value === 0) return null
+    const team = payload.team || 'FA'
+    const dotColor = showTeamColors ? (NFL_TEAM_COLORS[team] || '#6B7280') : color
+    return (
+      <circle cx={cx} cy={cy} r={4} fill={dotColor} stroke="#1f2937" strokeWidth={1} />
+    )
   }
 
   // Determine trend direction for label
@@ -202,11 +243,11 @@ function LineChart({
           <Area
             type="monotone"
             dataKey="value"
-            stroke={color}
-            strokeWidth={2.5}
+            stroke={showTeamColors ? '#6B7280' : color}
+            strokeWidth={2}
             fill={`url(#gradient-${label})`}
-            dot={false}
-            activeDot={false}
+            dot={showTeamColors ? <CustomDot /> : false}
+            activeDot={showTeamColors ? { r: 6, stroke: '#1f2937', strokeWidth: 2 } : false}
           />
           {/* Linear best fit trend line - only show with 5+ data points */}
           {nonZeroData.length >= 5 && (
@@ -231,6 +272,20 @@ function LineChart({
           )}
         </AreaChart>
       </ResponsiveContainer>
+      {/* Team Legend */}
+      {showTeamColors && teamsInOrder.length > 0 && (
+        <div className="flex flex-wrap gap-3 mt-2 mb-1">
+          {teamsInOrder.map(team => (
+            <div key={team} className="flex items-center gap-1.5">
+              <div
+                className="w-3 h-3 rounded-full"
+                style={{ backgroundColor: NFL_TEAM_COLORS[team] || '#6B7280' }}
+              />
+              <span className="text-xs text-gray-400">{team}</span>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="flex items-center justify-between mt-1">
         {showBrush && data.length > 5 && (
           <p className="text-xs text-gray-500">
@@ -419,7 +474,9 @@ export default function DeepDiveTab({
             if (offSnp && tmOffSnp && tmOffSnp > 0) {
               stats.snap_share = (offSnp / tmOffSnp) * 100
             }
-            weeklyStats.push({ week, stats })
+            // Get team from stats (Sleeper includes team in stats response)
+            const team = (stats as any).team as string | undefined
+            weeklyStats.push({ week, stats, team })
           }
         })
 
@@ -560,7 +617,7 @@ export default function DeepDiveTab({
       })
       .map(([key, config]) => {
         // Get all historical weekly data for this stat
-        const allWeeklyData: { x: string; y: number }[] = []
+        const allWeeklyData: { x: string; y: number; team?: string }[] = []
         const seasonsOldestFirst = [...selectedPlayer.seasonData].reverse()
 
         seasonsOldestFirst.forEach(season => {
@@ -568,6 +625,7 @@ export default function DeepDiveTab({
             allWeeklyData.push({
               x: `${season.season} W${w.week}`,
               y: w.stats[key] || 0,
+              team: w.team,
             })
           })
         })
@@ -601,7 +659,7 @@ export default function DeepDiveTab({
     if (!selectedPlayer || !selectedPlayer.seasonData.length) return []
 
     // Combine all seasons, oldest first
-    const allWeeks: { x: string; y: number; season: string; week: number }[] = []
+    const allWeeks: { x: string; y: number; season: string; week: number; team?: string }[] = []
 
     // Reverse to get oldest season first
     const seasonsOldestFirst = [...selectedPlayer.seasonData].reverse()
@@ -613,6 +671,7 @@ export default function DeepDiveTab({
           y: w.stats.pts_half_ppr || 0,
           season: season.season,
           week: w.week,
+          team: w.team,
         })
       })
     })
@@ -910,6 +969,7 @@ export default function DeepDiveTab({
                     format={(v) => v.toFixed(1)}
                     height={300}
                     color="#00ceb8"
+                    showTeamColors={true}
                   />
                   <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-center text-sm">
                     <div className="bg-sleeper-accent/30 rounded p-2">
