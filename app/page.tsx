@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { SleeperUser, SleeperLeague } from '@/lib/types'
-import { getUser, getUserLeagues, getAvatarUrl, getCurrentSeason } from '@/lib/sleeper'
+import { getUser, getUserLeagues, getAvatarUrl, getCurrentSeason, SLEEPER_LOGO_URL } from '@/lib/sleeper'
 
 export default function Home() {
   const router = useRouter()
@@ -146,7 +146,7 @@ export default function Home() {
                 src={getAvatarUrl(user.avatar)}
                 alt={user.display_name}
                 className="w-12 h-12 rounded-full bg-gray-700"
-                onError={(e) => { e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Crect fill="%23374151" width="100" height="100"/%3E%3Ctext x="50" y="60" text-anchor="middle" fill="%23666" font-size="40"%3E?%3C/text%3E%3C/svg%3E' }}
+                onError={(e) => { e.currentTarget.src = SLEEPER_LOGO_URL }}
               />
               <div>
                 <p className="font-semibold">{user.display_name}</p>
@@ -172,7 +172,7 @@ export default function Home() {
                       src={getAvatarUrl(league.avatar, 'league')}
                       alt={league.name}
                       className="w-10 h-10 rounded-lg bg-gray-700"
-                      onError={(e) => { e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Crect fill="%23374151" width="100" height="100"/%3E%3Ctext x="50" y="60" text-anchor="middle" fill="%23666" font-size="40"%3E?%3C/text%3E%3C/svg%3E' }}
+                      onError={(e) => { e.currentTarget.src = SLEEPER_LOGO_URL }}
                     />
                     <div className="flex-1">
                       <p className="font-semibold group-hover:text-amber-500 transition-colors">

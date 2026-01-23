@@ -44,6 +44,17 @@ interface SeasonStats {
   totals: PlayerStats
 }
 
+interface CachedPlayerData {
+  seasonData: SeasonStats[]
+  historicalValues: { date: string; value: number }[]
+  timestamp: number
+}
+
+// Player data cache - persists across component re-renders
+const playerDataCache = new Map<string, CachedPlayerData>()
+const preloadingPlayers = new Set<string>() // Track which players are currently being preloaded
+const CACHE_DURATION = 1000 * 60 * 30 // 30 minutes
+
 interface PlayerWithDetails extends SleeperPlayer {
   value: number
   ownerName: string | null
@@ -121,14 +132,18 @@ function LineChart({
   color = '#00ceb8',
   showBrush = true,
   showTeamColors = false,
+  hideTrend = false,
+  position,
 }: {
-  data: { x: string; y: number; team?: string }[]
+  data: { x: string; y: number; team?: string; snapShare?: number; inactive?: boolean }[]
   label: string
   format?: (v: number) => string
   height?: number
   color?: string
   showBrush?: boolean
   showTeamColors?: boolean
+  hideTrend?: boolean
+  position?: string
 }) {
   if (data.length === 0) return null
 
@@ -138,12 +153,14 @@ function LineChart({
     value: d.y,
     index: i,
     team: d.team || 'FA',
+    snapShare: d.snapShare,
+    inactive: d.inactive,
   }))
 
-  // Count occurrences of each team
+  // Count occurrences of each team (excluding inactive weeks)
   const teamCounts: Record<string, number> = {}
   chartData.forEach(d => {
-    if (d.team) {
+    if (d.team && !d.inactive) {
       teamCounts[d.team] = (teamCounts[d.team] || 0) + 1
     }
   })
@@ -152,16 +169,16 @@ function LineChart({
   // Filter out teams with < 3 data points (likely erroneous/fallback data)
   const teamsInOrder: string[] = []
   chartData.forEach(d => {
-    if (d.team && !teamsInOrder.includes(d.team) && teamCounts[d.team] >= 3) {
+    if (d.team && !d.inactive && !teamsInOrder.includes(d.team) && teamCounts[d.team] >= 3) {
       teamsInOrder.push(d.team)
     }
   })
 
-  // Reassign points with rare/erroneous teams to the nearest valid team
+  // Reassign points with rare/erroneous teams or inactive weeks to the nearest valid team
   // This prevents gaps in the chart
   let lastValidTeam = teamsInOrder[0] || 'FA'
   chartData.forEach(d => {
-    if (teamCounts[d.team] < 3) {
+    if (d.inactive || teamCounts[d.team] < 3) {
       d.team = lastValidTeam
     } else {
       lastValidTeam = d.team
@@ -198,9 +215,18 @@ function LineChart({
     ? (NFL_TEAM_COLORS[teamsInOrder[0]] || color)
     : color
 
-  // Calculate linear regression for trend line using all data points with their original indices
-  const nonZeroData = chartData.filter(d => d.value > 0)
-  const regressionData = nonZeroData.map(d => ({ index: d.index, value: d.value }))
+  // Calculate linear regression for trend line using filtered data points
+  // Exclude inactive weeks, and for QBs exclude zero-point games, for others exclude games with <10% snap share AND 0 points
+  const filteredData = chartData.filter(d => {
+    if (d.inactive) return false
+    if (position === 'QB') return d.value > 0
+    // Exclude only if BOTH snap share < 10% AND points = 0
+    if (d.snapShare !== undefined && d.snapShare < 10 && d.value === 0) return false
+    // Also exclude if no snap share data and 0 points
+    if (d.snapShare === undefined && d.value === 0) return false
+    return true
+  })
+  const regressionData = filteredData.map(d => ({ index: d.index, value: d.value }))
   const { slope, intercept } = calculateLinearRegression(regressionData)
 
   // Add trend line values and team-specific values
@@ -268,39 +294,41 @@ function LineChart({
               // Create gradients for each team
               teamsInOrder.map(team => (
                 <linearGradient key={team} id={`gradient-${label}-${team}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={NFL_TEAM_COLORS[team] || color} stopOpacity={0.3} />
-                  <stop offset="95%" stopColor={NFL_TEAM_COLORS[team] || color} stopOpacity={0.02} />
+                  <stop offset="5%" stopColor={NFL_TEAM_COLORS[team] || color} stopOpacity={0.5} />
+                  <stop offset="95%" stopColor={NFL_TEAM_COLORS[team] || color} stopOpacity={0.05} />
                 </linearGradient>
               ))
             ) : (
               <linearGradient id={`gradient-${label}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={lineColor} stopOpacity={0.4} />
-                <stop offset="95%" stopColor={lineColor} stopOpacity={0.05} />
+                <stop offset="5%" stopColor={lineColor} stopOpacity={0.5} />
+                <stop offset="95%" stopColor={lineColor} stopOpacity={0.08} />
               </linearGradient>
             )}
           </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#4B5563" vertical={false} />
           <XAxis
             dataKey="name"
-            stroke="#6b7280"
+            stroke="#9CA3AF"
             fontSize={10}
-            tickLine={false}
-            axisLine={{ stroke: '#374151' }}
+            tickLine={{ stroke: '#6B7280', strokeWidth: 1 }}
+            tickSize={-4}
+            tickMargin={8}
+            axisLine={{ stroke: '#6B7280' }}
             interval={Math.max(0, Math.floor(chartData.length / 8) - 1)}
           />
           <YAxis
-            stroke="#6b7280"
-            fontSize={11}
+            stroke="#9CA3AF"
+            fontSize={12}
             tickLine={false}
-            axisLine={{ stroke: '#374151' }}
-            tickFormatter={(value) => format(value)}
+            axisLine={{ stroke: '#6B7280' }}
+            tickFormatter={(value) => value === 0 && yMin === 0 ? '' : format(value)}
             width={55}
             domain={[yMin, yMax]}
             allowDataOverflow={false}
           />
           <Tooltip
             content={<CustomTooltip />}
-            cursor={{ stroke: '#6b7280', strokeWidth: 1, strokeDasharray: '4 4' }}
+            cursor={{ stroke: '#9CA3AF', strokeWidth: 1, strokeDasharray: '4 4' }}
           />
           {useMultiTeamLines ? (
             // Render separate line for each team with its color
@@ -310,10 +338,10 @@ function LineChart({
                 type="monotone"
                 dataKey={`value_${team}`}
                 stroke={NFL_TEAM_COLORS[team] || color}
-                strokeWidth={2}
+                strokeWidth={2.5}
                 fill={`url(#gradient-${label}-${team})`}
                 dot={false}
-                activeDot={{ r: 5, fill: NFL_TEAM_COLORS[team] || color, stroke: '#1f2937', strokeWidth: 2 }}
+                activeDot={{ r: 6, fill: NFL_TEAM_COLORS[team] || color, stroke: '#1f2937', strokeWidth: 2 }}
                 connectNulls={true}
                 isAnimationActive={idx === 0}
               />
@@ -323,14 +351,14 @@ function LineChart({
               type="monotone"
               dataKey="value"
               stroke={lineColor}
-              strokeWidth={2}
+              strokeWidth={2.5}
               fill={`url(#gradient-${label})`}
               dot={false}
-              activeDot={{ r: 5, fill: lineColor, stroke: '#1f2937', strokeWidth: 2 }}
+              activeDot={{ r: 6, fill: lineColor, stroke: '#1f2937', strokeWidth: 2 }}
             />
           )}
           {/* Linear best fit trend line - only show with 5+ data points */}
-          {nonZeroData.length >= 5 && (
+          {filteredData.length >= 5 && (
             <Line
               type="linear"
               dataKey="trend"
@@ -352,32 +380,13 @@ function LineChart({
           )}
         </AreaChart>
       </ResponsiveContainer>
-      {/* Team Legend */}
-      {showTeamColors && teamsInOrder.length > 0 && (
-        <div className="flex flex-wrap gap-3 mt-2 mb-1">
-          {teamsInOrder.map(team => (
-            <div key={team} className="flex items-center gap-1.5">
-              <div
-                className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: NFL_TEAM_COLORS[team] || '#6B7280' }}
-              />
-              <span className="text-xs text-gray-400">{team}</span>
-            </div>
-          ))}
-        </div>
-      )}
-      <div className="flex items-center justify-between mt-1">
-        {showBrush && data.length > 5 && (
-          <p className="text-xs text-gray-500">
-            Drag handles to zoom • Drag selection to pan
-          </p>
-        )}
-        {nonZeroData.length >= 5 && (
-          <p className="text-xs ml-auto" style={{ color: trendColor }}>
+      {!hideTrend && filteredData.length >= 5 && (
+        <div className="flex justify-end mt-1">
+          <p className="text-xs" style={{ color: trendColor }}>
             {trendDirection} {slope !== 0 && `(${slope > 0 ? '+' : ''}${(slope * 10).toFixed(2)}/10 weeks)`}
           </p>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -395,6 +404,7 @@ export default function DeepDiveTab({
   const [expandedStat, setExpandedStat] = useState<string | null>(null)
   const [historicalValues, setHistoricalValues] = useState<{ date: string; value: number }[]>([])
   const [loadingHistorical, setLoadingHistorical] = useState(false)
+  const [chartPreset, setChartPreset] = useState<string>('career')
   const [initialLoadDone, setInitialLoadDone] = useState(false)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(false)
@@ -515,14 +525,88 @@ export default function DeepDiveTab({
     }
   }, [initialPlayerId, allPlayers, users, rosters, initialLoadDone])
 
-  // Fetch player stats when selected
+  // Fetch player stats when selected (uses cache if available)
   async function selectPlayer(player: SleeperPlayer & { value: number; ownerName: string | null }) {
     setSelectedPlayer(null)
-    setLoadingStats(true)
     setExpandedStat(null)
+    setChartPreset('career')
+
+    const ownership = ownershipMap.get(player.player_id)
+
+    // Check cache first for instant load
+    const cached = playerDataCache.get(player.player_id)
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      setSelectedPlayer({
+        ...player,
+        ownerName: ownership?.ownerName || player.ownerName || null,
+        rosterId: ownership?.rosterId || null,
+        seasonData: cached.seasonData,
+        currentSeasonTotals: cached.seasonData[0]?.totals || {},
+      })
+      setExpandedStat('pts_half_ppr')
+      setHistoricalValues(cached.historicalValues)
+      return
+    }
+
+    setLoadingStats(true)
+    setLoadingHistorical(true)
 
     try {
-      const ownership = ownershipMap.get(player.player_id)
+      const data = await fetchPlayerData(player)
+
+      if (data) {
+        setSelectedPlayer({
+          ...player,
+          ownerName: ownership?.ownerName || player.ownerName || null,
+          rosterId: ownership?.rosterId || null,
+          seasonData: data.seasonData,
+          currentSeasonTotals: data.seasonData[0]?.totals || {},
+        })
+        setExpandedStat('pts_half_ppr')
+        setHistoricalValues(data.historicalValues)
+      }
+    } catch (error) {
+      console.error('Failed to fetch player stats:', error)
+    } finally {
+      setLoadingStats(false)
+      setLoadingHistorical(false)
+    }
+  }
+
+  function getCurrentWeek(): number {
+    const season = currentSeasonNum
+    const seasonStart = new Date(`${season}-09-05`)
+    const now = new Date()
+    const diffTime = now.getTime() - seasonStart.getTime()
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
+    const week = Math.floor(diffDays / 7) + 1
+    return Math.min(Math.max(week, 1), 18)
+  }
+
+  // Fetch player data (used by both preload and select)
+  const fetchPlayerData = useCallback(async (player: SleeperPlayer): Promise<CachedPlayerData | null> => {
+    const playerId = player.player_id
+
+    // Check cache first
+    const cached = playerDataCache.get(playerId)
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      return cached
+    }
+
+    // Mark as preloading to prevent duplicate fetches
+    if (preloadingPlayers.has(playerId)) {
+      // Wait for the other fetch to complete
+      while (preloadingPlayers.has(playerId)) {
+        await new Promise(resolve => setTimeout(resolve, 100))
+        const newCached = playerDataCache.get(playerId)
+        if (newCached) return newCached
+      }
+      return playerDataCache.get(playerId) || null
+    }
+
+    preloadingPlayers.add(playerId)
+
+    try {
       const seasonData: SeasonStats[] = []
 
       // Fetch team history from ESPN (if player has ESPN ID)
@@ -540,7 +624,7 @@ export default function DeepDiveTab({
         }
       }
 
-      // Fetch stats for last 6 seasons (back to 2020) - all in parallel for speed
+      // Fetch stats for last 6 seasons - all in parallel for speed
       const seasons = Array.from({ length: 6 }, (_, i) => currentSeasonNum - i)
 
       // Fetch with timeout helper
@@ -557,9 +641,6 @@ export default function DeepDiveTab({
         }
       }
 
-      // Default team
-      const defaultTeam = player.team || 'FA'
-
       // Fetch all seasons in parallel
       const seasonPromises = seasons.map(async (season) => {
         const weeksToFetch = season === currentSeasonNum ? getCurrentWeek() : 18
@@ -575,21 +656,46 @@ export default function DeepDiveTab({
         const results = await Promise.all(weekPromises)
 
         results.forEach(({ week, data }) => {
-          if (data[player.player_id]) {
-            const stats = { ...data[player.player_id] }
+          if (data[playerId]) {
+            const stats = { ...data[playerId] }
             // Compute snap share percentage
             const offSnp = stats.off_snp as number | undefined
             const tmOffSnp = stats.tm_off_snp as number | undefined
             if (offSnp && tmOffSnp && tmOffSnp > 0) {
               stats.snap_share = (offSnp / tmOffSnp) * 100
             }
-            // Use team from ESPN history if available, otherwise use current team
-            const team = teamHistory[`${season}-${week}`] || defaultTeam
+            // Use team from ESPN history if available
+            const team = teamHistory[`${season}-${week}`] || ''
             weeklyStats.push({ week, stats, team })
           }
         })
 
         weeklyStats.sort((a, b) => a.week - b.week)
+
+        // Fill in missing teams from nearby weeks
+        let lastKnownTeam = ''
+        weeklyStats.forEach(ws => {
+          if (ws.team) {
+            lastKnownTeam = ws.team
+          } else if (lastKnownTeam) {
+            ws.team = lastKnownTeam
+          }
+        })
+        lastKnownTeam = ''
+        for (let i = weeklyStats.length - 1; i >= 0; i--) {
+          const currentTeam = weeklyStats[i].team
+          if (currentTeam) {
+            lastKnownTeam = currentTeam
+          } else if (lastKnownTeam) {
+            weeklyStats[i].team = lastKnownTeam
+          }
+        }
+        const fallbackTeam = player.team || 'FA'
+        weeklyStats.forEach(ws => {
+          if (!ws.team) {
+            ws.team = fallbackTeam
+          }
+        })
 
         // Calculate totals
         let snapShareSum = 0
@@ -615,56 +721,90 @@ export default function DeepDiveTab({
 
       const allSeasonData = await Promise.all(seasonPromises)
 
-      // Filter out empty seasons and add to seasonData
+      // Filter out empty seasons
       allSeasonData.forEach(data => {
         if (data.weeklyStats.length > 0) {
           seasonData.push(data)
         }
       })
 
-      setSelectedPlayer({
-        ...player,
-        ownerName: ownership?.ownerName || player.ownerName || null,
-        rosterId: ownership?.rosterId || null,
-        seasonData,
-        currentSeasonTotals: seasonData[0]?.totals || {},
-      })
-      // Default to showing Fantasy Points chart
-      setExpandedStat('pts_half_ppr')
-
       // Fetch historical dynasty values
-      setLoadingHistorical(true)
+      let historicalValues: { date: string; value: number }[] = []
       try {
         const playerFullName = `${player.first_name} ${player.last_name}`
         const histRes = await fetch(`/api/historical-values?player=${encodeURIComponent(playerFullName)}`)
         if (histRes.ok) {
           const histData = await histRes.json()
-          setHistoricalValues(histData.history || [])
-        } else {
-          setHistoricalValues([])
+          historicalValues = histData.history || []
         }
-      } catch (histError) {
-        console.error('Failed to fetch historical values:', histError)
-        setHistoricalValues([])
-      } finally {
-        setLoadingHistorical(false)
+      } catch {
+        // Ignore historical values errors
       }
-    } catch (error) {
-      console.error('Failed to fetch player stats:', error)
-    } finally {
-      setLoadingStats(false)
-    }
-  }
 
-  function getCurrentWeek(): number {
-    const season = currentSeasonNum
-    const seasonStart = new Date(`${season}-09-05`)
-    const now = new Date()
-    const diffTime = now.getTime() - seasonStart.getTime()
-    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
-    const week = Math.floor(diffDays / 7) + 1
-    return Math.min(Math.max(week, 1), 18)
-  }
+      const cachedData: CachedPlayerData = {
+        seasonData,
+        historicalValues,
+        timestamp: Date.now(),
+      }
+
+      playerDataCache.set(playerId, cachedData)
+      return cachedData
+    } finally {
+      preloadingPlayers.delete(playerId)
+    }
+  }, [currentSeasonNum])
+
+  // Preload player data in background (doesn't set state)
+  const preloadPlayer = useCallback((player: SleeperPlayer) => {
+    // Don't preload if already cached or currently preloading
+    const cached = playerDataCache.get(player.player_id)
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) return
+    if (preloadingPlayers.has(player.player_id)) return
+
+    // Fetch in background
+    fetchPlayerData(player).catch(() => {
+      // Ignore preload errors
+    })
+  }, [fetchPlayerData])
+
+  // Preload roster players in background when component mounts
+  useEffect(() => {
+    // Get all unique rostered player IDs
+    const rosteredPlayerIds = new Set<string>()
+    rosters.forEach(roster => {
+      roster.players?.forEach(playerId => {
+        if (allPlayers[playerId]) {
+          rosteredPlayerIds.add(playerId)
+        }
+      })
+    })
+
+    // Preload players in batches to avoid overwhelming the API
+    const playerIds = Array.from(rosteredPlayerIds)
+    let currentIndex = 0
+    const batchSize = 3 // Preload 3 players at a time
+    const batchDelay = 500 // 500ms between batches
+
+    const preloadBatch = () => {
+      const batch = playerIds.slice(currentIndex, currentIndex + batchSize)
+      batch.forEach(playerId => {
+        const player = allPlayers[playerId]
+        if (player) {
+          preloadPlayer(player)
+        }
+      })
+      currentIndex += batchSize
+
+      if (currentIndex < playerIds.length) {
+        setTimeout(preloadBatch, batchDelay)
+      }
+    }
+
+    // Start preloading after a short delay to let the UI render first
+    const timeoutId = setTimeout(preloadBatch, 1000)
+
+    return () => clearTimeout(timeoutId)
+  }, [rosters, allPlayers, preloadPlayer])
 
   const getPositionColor = (pos: string) => {
     switch (pos) {
@@ -737,7 +877,7 @@ export default function DeepDiveTab({
         seasonsOldestFirst.forEach(season => {
           season.weeklyStats.forEach(w => {
             allWeeklyData.push({
-              x: `${season.season} W${w.week}`,
+              x: `'${season.season.slice(-2)} W${w.week}`,
               y: w.stats[key] || 0,
               team: w.team,
             })
@@ -773,24 +913,59 @@ export default function DeepDiveTab({
     if (!selectedPlayer || !selectedPlayer.seasonData.length) return []
 
     // Combine all seasons, oldest first
-    const allWeeks: { x: string; y: number; season: string; week: number; team?: string }[] = []
+    const allWeeks: { x: string; y: number; season: string; week: number; team?: string; snapShare?: number; inactive?: boolean }[] = []
 
     // Reverse to get oldest season first
     const seasonsOldestFirst = [...selectedPlayer.seasonData].reverse()
 
     seasonsOldestFirst.forEach(season => {
-      season.weeklyStats.forEach(w => {
-        allWeeks.push({
-          x: `${season.season} W${w.week}`,
-          y: w.stats.pts_half_ppr || 0,
-          season: season.season,
-          week: w.week,
-          team: w.team,
-        })
-      })
+      // NFL has 18 weeks since 2021, 17 weeks before (each team plays 16/17 games with a bye)
+      const seasonYear = parseInt(season.season)
+      const totalWeeks = seasonYear >= 2021 ? 18 : 17
+
+      // Create a map of existing weekly stats
+      const weekMap = new Map(season.weeklyStats.map(w => [w.week, w]))
+
+      // Fill in all weeks
+      for (let week = 1; week <= totalWeeks; week++) {
+        const existingWeek = weekMap.get(week)
+        if (existingWeek) {
+          allWeeks.push({
+            x: `'${season.season.slice(-2)} W${week}`,
+            y: existingWeek.stats.pts_half_ppr || 0,
+            season: season.season,
+            week,
+            team: existingWeek.team,
+            snapShare: existingWeek.stats.snap_share,
+          })
+        } else {
+          // Player was inactive this week (bye, injury, not on roster, etc.)
+          allWeeks.push({
+            x: `'${season.season.slice(-2)} W${week}`,
+            y: 0,
+            season: season.season,
+            week,
+            team: undefined,
+            snapShare: undefined,
+            inactive: true,
+          })
+        }
+      }
     })
 
     return allWeeks
+  }, [selectedPlayer])
+
+  // Filter data based on chart preset
+  const filteredChartData = useMemo(() => {
+    if (chartPreset === 'career') return allWeeklyFantasyPoints
+    return allWeeklyFantasyPoints.filter(w => w.season === chartPreset)
+  }, [allWeeklyFantasyPoints, chartPreset])
+
+  // Get available seasons for presets
+  const availableSeasons = useMemo(() => {
+    if (!selectedPlayer) return []
+    return selectedPlayer.seasonData.map(s => s.season)
   }, [selectedPlayer])
 
   return (
@@ -815,6 +990,7 @@ export default function DeepDiveTab({
                   selectPlayer(player)
                   setSearchQuery('')
                 }}
+                onMouseEnter={() => preloadPlayer(player)}
                 className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-sleeper-accent/50 transition-colors border-b border-sleeper-accent last:border-b-0"
               >
                 <span className={`px-2 py-0.5 rounded text-xs font-bold ${getPositionColor(player.position)}`}>
@@ -1076,39 +1252,134 @@ export default function DeepDiveTab({
                         {selectedPlayer?.seasonData.length} season{selectedPlayer?.seasonData.length !== 1 ? 's' : ''} of data
                       </p>
                     </div>
+                    {/* Team Legend */}
+                    {(() => {
+                      const teams: string[] = []
+                      allWeeklyFantasyPoints.forEach(d => {
+                        if (d.team && !teams.includes(d.team)) teams.push(d.team)
+                      })
+                      return teams.length > 0 ? (
+                        <div className="flex flex-wrap gap-3">
+                          {teams.map(team => (
+                            <div key={team} className="flex items-center gap-1.5">
+                              <div
+                                className="w-3 h-3 rounded-full"
+                                style={{ backgroundColor: NFL_TEAM_COLORS[team] || '#6B7280' }}
+                              />
+                              <span className="text-sm text-gray-400">{team}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null
+                    })()}
                   </div>
-                  <LineChart
-                    data={allWeeklyFantasyPoints}
+                  <div className="bg-gray-950 rounded-lg p-3 border border-gray-800">
+                    <LineChart
+                    data={filteredChartData}
                     label="FantasyPts"
                     format={(v) => v.toFixed(1)}
                     height={300}
                     color="#00ceb8"
                     showTeamColors={true}
+                    hideTrend={true}
+                    position={selectedPlayer.position}
                   />
-                  <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-center text-sm">
+                  </div>
+                  {/* Chart Presets */}
+                  <div className="mt-3 flex gap-2 flex-wrap">
+                    <button
+                      onClick={() => setChartPreset('career')}
+                      className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                        chartPreset === 'career'
+                          ? 'bg-amber-500 text-black'
+                          : 'bg-sleeper-accent text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      Career
+                    </button>
+                    {availableSeasons.map(season => (
+                      <button
+                        key={season}
+                        onClick={() => setChartPreset(season)}
+                        className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                          chartPreset === season
+                            ? 'bg-amber-500 text-black'
+                            : 'bg-sleeper-accent text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        {season}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-4 text-center text-sm">
                     <div className="bg-sleeper-accent/30 rounded p-2">
-                      <div className="text-gray-400">Career Total</div>
+                      <div className="text-gray-400">{chartPreset === 'career' ? 'Career Total' : 'Total'}</div>
                       <div className="font-bold text-green-400">
-                        {allWeeklyFantasyPoints.reduce((sum, w) => sum + w.y, 0).toFixed(1)}
+                        {filteredChartData.reduce((sum, w) => sum + w.y, 0).toFixed(1)}
                       </div>
                     </div>
                     <div className="bg-sleeper-accent/30 rounded p-2">
-                      <div className="text-gray-400">Games</div>
-                      <div className="font-bold">{allWeeklyFantasyPoints.filter(w => w.y > 0).length}</div>
+                      <div className="text-gray-400 flex items-center justify-center gap-1">
+                        Games
+                        <span
+                          className="inline-flex items-center justify-center w-4 h-4 text-xs rounded-full bg-gray-600 text-gray-300 cursor-help"
+                          title="Games played out of total weeks. Zeros on the chart may be bye weeks, injuries, or games where the player was inactive."
+                        >?</span>
+                      </div>
+                      <div className="font-bold">{filteredChartData.filter(w => {
+                        if (w.inactive) return false
+                        if (selectedPlayer.position === 'QB') return w.y > 0
+                        // Exclude only if BOTH snap share < 10% AND points = 0
+                        if (w.snapShare !== undefined && w.snapShare < 10 && w.y === 0) return false
+                        if (w.snapShare === undefined && w.y === 0) return false
+                        return true
+                      }).length} out of {filteredChartData.length}</div>
                     </div>
                     <div className="bg-sleeper-accent/30 rounded p-2">
                       <div className="text-gray-400">Avg/Game</div>
                       <div className="font-bold">
-                        {(allWeeklyFantasyPoints.filter(w => w.y > 0).reduce((sum, w) => sum + w.y, 0) /
-                          Math.max(allWeeklyFantasyPoints.filter(w => w.y > 0).length, 1)).toFixed(1)}
+                        {(filteredChartData.filter(w => w.y > 0).reduce((sum, w) => sum + w.y, 0) /
+                          Math.max(filteredChartData.filter(w => w.y > 0).length, 1)).toFixed(1)}
                       </div>
                     </div>
                     <div className="bg-sleeper-accent/30 rounded p-2">
                       <div className="text-gray-400">Best Week</div>
                       <div className="font-bold text-yellow-400">
-                        {Math.max(...allWeeklyFantasyPoints.map(w => w.y)).toFixed(1)}
+                        {filteredChartData.length > 0 ? Math.max(...filteredChartData.map(w => w.y)).toFixed(1) : '0.0'}
                       </div>
                     </div>
+                    {(() => {
+                      const nonZero = filteredChartData.filter(w => {
+                        if (w.inactive) return false
+                        if (selectedPlayer.position === 'QB') return w.y > 0
+                        // Exclude only if BOTH snap share < 10% AND points = 0
+                        if (w.snapShare !== undefined && w.snapShare < 10 && w.y === 0) return false
+                        if (w.snapShare === undefined && w.y === 0) return false
+                        return true
+                      }).map((w, i) => ({ index: i, value: w.y }))
+                      if (nonZero.length < 5) return null
+                      const n = nonZero.length
+                      const sumX = nonZero.reduce((s, d) => s + d.index, 0)
+                      const sumY = nonZero.reduce((s, d) => s + d.value, 0)
+                      const sumXY = nonZero.reduce((s, d) => s + d.index * d.value, 0)
+                      const sumX2 = nonZero.reduce((s, d) => s + d.index * d.index, 0)
+                      const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX)
+                      const trendColor = slope > 0.01 ? 'text-green-400' : slope < -0.01 ? 'text-red-400' : 'text-yellow-400'
+                      return (
+                        <div className="bg-sleeper-accent/30 rounded p-2">
+                          <div className="text-gray-400 flex items-center justify-center gap-1">
+                            Trend
+                            <span
+                              className="inline-flex items-center justify-center w-4 h-4 text-xs rounded-full bg-gray-600 text-gray-300 cursor-help"
+                              title={selectedPlayer.position === 'QB' ? 'Points change per 10 games (excludes zero-point games)' : 'Points change per 10 games (excludes games with <10% snap share and 0 points)'}
+                            >?</span>
+                          </div>
+                          <div className={`font-bold ${trendColor}`}>
+                            {slope > 0 ? '+' : ''}{(slope * 10).toFixed(2)} per 10 wks
+                          </div>
+                        </div>
+                      )
+                    })()}
                   </div>
                 </div>
               )}
@@ -1124,12 +1395,14 @@ export default function DeepDiveTab({
                       </p>
                     </div>
                   </div>
-                  <LineChart
-                    data={relevantStats.find(s => s.key === expandedStat)!.weeklyData}
-                    label={expandedStat}
-                    format={STAT_CONFIG[expandedStat]?.format || ((v) => v.toFixed(1))}
-                    height={300}
-                  />
+                  <div className="bg-gray-950 rounded-lg p-3 border border-gray-800">
+                    <LineChart
+                      data={relevantStats.find(s => s.key === expandedStat)!.weeklyData}
+                      label={expandedStat}
+                      format={STAT_CONFIG[expandedStat]?.format || ((v) => v.toFixed(1))}
+                      height={300}
+                    />
+                  </div>
                   <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-center text-sm">
                     {(() => {
                       const statData = relevantStats.find(s => s.key === expandedStat)!

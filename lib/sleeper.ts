@@ -79,6 +79,35 @@ export async function getTradedPicks(leagueId: string): Promise<TradedPick[]> {
   return res.json()
 }
 
+export interface PlayoffMatchup {
+  r: number // round
+  m: number // matchup id
+  t1: number | null // roster_id of team 1
+  t2: number | null // roster_id of team 2
+  w: number | null // roster_id of winner
+  l: number | null // roster_id of loser
+  t1_from?: { w?: number; l?: number } // where team 1 came from
+  t2_from?: { w?: number; l?: number } // where team 2 came from
+}
+
+export async function getWinnersBracket(leagueId: string): Promise<PlayoffMatchup[]> {
+  const res = await fetch(`${BASE_URL}/league/${leagueId}/winners_bracket`)
+  if (!res.ok) return []
+  return res.json()
+}
+
+// Get the league champion's roster_id from the winners bracket
+export function getChampionRosterId(bracket: PlayoffMatchup[]): number | null {
+  if (!bracket || bracket.length === 0) return null
+
+  // Find the championship matchup (highest round number)
+  const maxRound = Math.max(...bracket.map(m => m.r))
+  const championship = bracket.find(m => m.r === maxRound)
+
+  // Return the winner's roster_id
+  return championship?.w || null
+}
+
 // Helper function to get current NFL week (approximate)
 export function getCurrentWeek(): number {
   const season = parseInt(getCurrentSeason())
@@ -92,11 +121,14 @@ export function getCurrentWeek(): number {
   return Math.min(Math.max(week, 1), 18)
 }
 
+// Sleeper logo fallback URL
+export const SLEEPER_LOGO_URL = 'https://sleepercdn.com/images/v2/icons/league/league_avatar_mint.png'
+
 // Get avatar URL
 export function getAvatarUrl(avatarId: string | null | undefined, type: 'user' | 'league' = 'user'): string {
   if (!avatarId) {
-    // Use data URI placeholders for missing avatars
-    return 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Crect fill="%230f3460" width="100" height="100"/%3E%3Ctext x="50" y="60" text-anchor="middle" fill="%23666" font-size="40"%3E?%3C/text%3E%3C/svg%3E'
+    // Use Sleeper logo as fallback
+    return SLEEPER_LOGO_URL
   }
   return `https://sleepercdn.com/avatars/thumbs/${avatarId}`
 }
