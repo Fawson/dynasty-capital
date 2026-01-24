@@ -22,7 +22,7 @@ export default function Navigation({ leagueId, leagueName }: NavigationProps) {
   const basePath = `/league/${leagueId}`
   const userQuery = userId ? `?userId=${userId}` : ''
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [expandedSections, setExpandedSections] = useState<string[]>(['League', 'Analysis'])
+  const [expandedSections, setExpandedSections] = useState<string[]>(['League', 'Trades', 'Analysis'])
 
   const navSections: NavSection[] = [
     {
@@ -36,6 +36,19 @@ export default function Navigation({ leagueId, leagueName }: NavigationProps) {
         { href: `${basePath}${userQuery}`, label: 'Overview' },
         { href: `${basePath}/teams${userQuery}`, label: 'Teams' },
         { href: `${basePath}/matchups${userQuery}`, label: 'Matchups' },
+        { href: `${basePath}/draft${userQuery}`, label: 'Draft Board' },
+      ],
+    },
+    {
+      title: 'Trades',
+      icon: (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+        </svg>
+      ),
+      items: [
+        { href: `${basePath}/trade${userQuery}`, label: 'Trade Analyzer' },
+        { href: `${basePath}/trades${userQuery}`, label: 'Trade History' },
       ],
     },
     {
@@ -48,7 +61,7 @@ export default function Navigation({ leagueId, leagueName }: NavigationProps) {
       items: [
         { href: `${basePath}/player-analysis${userQuery}`, label: 'Player Deep Dive' },
         { href: `${basePath}/value${userQuery}`, label: 'Value Analyzer' },
-        { href: `${basePath}/trade${userQuery}`, label: 'Trade Analyzer' },
+        { href: `${basePath}/what-if${userQuery}`, label: 'What If' },
       ],
     },
     {

@@ -30,6 +30,7 @@ export interface LeagueSettings {
   waiver_type: number
   waiver_budget: number
   bench_lock: number
+  draft_rounds?: number
 }
 
 export interface SleeperRoster {

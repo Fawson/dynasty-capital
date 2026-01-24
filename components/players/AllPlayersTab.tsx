@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import { SleeperPlayer, SleeperRoster, LeagueUser } from '@/lib/types'
-import { getSleeperPlayerValue } from '@/lib/fantasypros'
+import { getSleeperPlayerValue, getAllPlayerValues } from '@/lib/fantasypros'
 
 interface AllPlayersTabProps {
   leagueId: string
@@ -29,11 +29,14 @@ export default function AllPlayersTab({
   const [filter, setFilter] = useState<string>('ALL')
   const [sortBy, setSortBy] = useState<'value' | 'name'>('value')
   const [searchQuery, setSearchQuery] = useState('')
+  const [freeAgentsOnly, setFreeAgentsOnly] = useState(false)
 
   const players = useMemo(() => {
     const userMap = new Map(users.map((u) => [u.user_id, u]))
-    const rosteredPlayers: PlayerWithRoster[] = []
+    const allPlayersList: PlayerWithRoster[] = []
+    const rosteredPlayerIds = new Set<string>()
 
+    // First, add all rostered players
     rosters.forEach((roster) => {
       const owner = userMap.get(roster.owner_id)
       const ownerName = owner?.metadata?.team_name || owner?.display_name || 'Unknown'
@@ -41,6 +44,7 @@ export default function AllPlayersTab({
       roster.players?.forEach((playerId) => {
         const player = allPlayers[playerId]
         if (player && player.position) {
+          rosteredPlayerIds.add(playerId)
           const value = getSleeperPlayerValue(
             player.first_name,
             player.last_name,
@@ -48,7 +52,7 @@ export default function AllPlayersTab({
             player.team
           )
 
-          rosteredPlayers.push({
+          allPlayersList.push({
             ...player,
             value,
             ownerName,
@@ -58,7 +62,27 @@ export default function AllPlayersTab({
       })
     })
 
-    return rosteredPlayers
+    // Then add free agents from our value database
+    const valuedPlayers = getAllPlayerValues()
+    valuedPlayers.forEach((valuedPlayer) => {
+      // Find the Sleeper player by name AND position to avoid name collisions (e.g., multiple "Josh Allen"s)
+      const sleeperPlayer = Object.values(allPlayers).find(
+        (p) => (p.full_name?.toLowerCase() === valuedPlayer.name.toLowerCase() ||
+               `${p.first_name} ${p.last_name}`.toLowerCase() === valuedPlayer.name.toLowerCase()) &&
+               p.position === valuedPlayer.position
+      )
+
+      if (sleeperPlayer && !rosteredPlayerIds.has(sleeperPlayer.player_id)) {
+        allPlayersList.push({
+          ...sleeperPlayer,
+          value: valuedPlayer.value,
+          ownerName: 'Free Agent',
+          rosterId: 0,
+        })
+      }
+    })
+
+    return allPlayersList
   }, [allPlayers, rosters, users])
 
   const positions = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DEF']
@@ -83,6 +107,7 @@ export default function AllPlayersTab({
 
   const filteredPlayers = players
     .filter((p) => filter === 'ALL' || p.position === filter)
+    .filter((p) => !freeAgentsOnly || p.ownerName === 'Free Agent')
     .filter((p) => {
       if (!searchQuery.trim()) return true
       const query = searchQuery.toLowerCase()
@@ -117,11 +142,14 @@ export default function AllPlayersTab({
     return 'text-gray-500'
   }
 
+  const rosteredCount = players.filter(p => p.ownerName !== 'Free Agent').length
+  const freeAgentCount = players.filter(p => p.ownerName === 'Free Agent').length
+
   return (
     <div className="space-y-6">
       <div>
         <p className="text-gray-400">
-          {filteredPlayers.length} players ({players.length} total rostered)
+          {filteredPlayers.length} players ({rosteredCount} rostered, {freeAgentCount} free agents)
         </p>
       </div>
 
@@ -172,7 +200,7 @@ export default function AllPlayersTab({
           ))}
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <button
             onClick={() => setSortBy('value')}
             className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
@@ -192,6 +220,16 @@ export default function AllPlayersTab({
             }`}
           >
             Sort by Name
+          </button>
+          <button
+            onClick={() => setFreeAgentsOnly(!freeAgentsOnly)}
+            className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+              freeAgentsOnly
+                ? 'bg-amber-500 text-white'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            Free Agents Only
           </button>
         </div>
       </div>
@@ -234,13 +272,17 @@ export default function AllPlayersTab({
                 </td>
                 <td className="px-3 sm:px-4 py-3 text-gray-400 hidden sm:table-cell">{player.team || 'FA'}</td>
                 <td className="px-3 sm:px-4 py-3">
-                  <Link
-                    href={`/league/${leagueId}/team/${player.rosterId}`}
-                    className="text-gray-400 hover:text-sleeper-highlight transition-colors text-sm sm:text-base"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {player.ownerName}
-                  </Link>
+                  {player.ownerName === 'Free Agent' ? (
+                    <span className="text-amber-500 text-sm sm:text-base">Free Agent</span>
+                  ) : (
+                    <Link
+                      href={`/league/${leagueId}/team/${player.rosterId}`}
+                      className="text-gray-400 hover:text-sleeper-highlight transition-colors text-sm sm:text-base"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {player.ownerName}
+                    </Link>
+                  )}
                 </td>
                 <td className={`px-3 sm:px-4 py-3 text-right font-semibold ${getValueColor(player.value)}`}>
                   {player.value.toLocaleString()}

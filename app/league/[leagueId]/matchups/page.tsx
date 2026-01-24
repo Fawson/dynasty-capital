@@ -28,25 +28,48 @@ export default function MatchupsPage() {
   const [matchups, setMatchups] = useState<MatchupWithTeams[]>([])
   const [league, setLeague] = useState<SleeperLeague | null>(null)
   const [loading, setLoading] = useState(true)
-  const [week, setWeek] = useState(getCurrentWeek())
+  const [week, setWeek] = useState<number | null>(null)
+  const [initializedWeek, setInitializedWeek] = useState(false)
+
+  // First, fetch league to determine the valid week range
+  useEffect(() => {
+    async function initializeWeek() {
+      try {
+        const leagueRes = await fetch(`https://api.sleeper.app/v1/league/${leagueId}`)
+        const leagueData: SleeperLeague = await leagueRes.json()
+        setLeague(leagueData)
+
+        // Set initial week to the league's current week, clamped to valid range
+        const leagueMaxWeek = leagueData.settings?.leg || 17
+        const calculatedWeek = getCurrentWeek()
+        const validWeek = Math.min(calculatedWeek, leagueMaxWeek)
+        setWeek(validWeek)
+        setInitializedWeek(true)
+      } catch (error) {
+        console.error('Failed to fetch league:', error)
+        setWeek(1)
+        setInitializedWeek(true)
+      }
+    }
+
+    initializeWeek()
+  }, [leagueId])
 
   useEffect(() => {
+    if (!initializedWeek || week === null) return
+
     async function fetchData() {
       setLoading(true)
       try {
-        const [leagueRes, rostersRes, usersRes, matchupsRes] = await Promise.all([
-          fetch(`https://api.sleeper.app/v1/league/${leagueId}`),
+        const [rostersRes, usersRes, matchupsRes] = await Promise.all([
           fetch(`https://api.sleeper.app/v1/league/${leagueId}/rosters`),
           fetch(`https://api.sleeper.app/v1/league/${leagueId}/users`),
           fetch(`https://api.sleeper.app/v1/league/${leagueId}/matchups/${week}`),
         ])
 
-        const leagueData: SleeperLeague = await leagueRes.json()
         const rosters: SleeperRoster[] = await rostersRes.json()
         const users: LeagueUser[] = await usersRes.json()
         const weekMatchups: SleeperMatchup[] = await matchupsRes.json()
-
-        setLeague(leagueData)
 
         const rosterMap = new Map(rosters.map((r) => [r.roster_id, r]))
         const userMap = new Map(users.map((u) => [u.user_id, u]))
@@ -101,11 +124,10 @@ export default function MatchupsPage() {
     fetchData()
   }, [leagueId, week])
 
-  const maxWeek = league?.settings?.playoff_week_start
-    ? league.settings.playoff_week_start + 2
-    : 17
+  // Use the league's current week (leg) as the max week, which reflects actual games played
+  const maxWeek = league?.settings?.leg || 17
 
-  if (loading) {
+  if (loading || week === null) {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">

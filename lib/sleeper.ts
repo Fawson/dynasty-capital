@@ -79,6 +79,45 @@ export async function getTradedPicks(leagueId: string): Promise<TradedPick[]> {
   return res.json()
 }
 
+export interface Transaction {
+  type: 'trade' | 'free_agent' | 'waiver'
+  transaction_id: string
+  status: string
+  status_updated: number
+  roster_ids: number[]
+  adds: Record<string, number> | null  // player_id -> roster_id
+  drops: Record<string, number> | null // player_id -> roster_id
+  draft_picks: {
+    season: string
+    round: number
+    roster_id: number
+    previous_owner_id: number
+    owner_id: number
+  }[]
+  waiver_budget: {
+    sender: number
+    receiver: number
+    amount: number
+  }[]
+  created: number
+  creator: string
+  leg: number
+}
+
+export async function getTransactions(leagueId: string, week: number): Promise<Transaction[]> {
+  const res = await fetch(`${BASE_URL}/league/${leagueId}/transactions/${week}`)
+  if (!res.ok) return []
+  return res.json()
+}
+
+export async function getAllTransactions(leagueId: string, maxWeek: number = 18): Promise<Transaction[]> {
+  const weeks = Array.from({ length: maxWeek }, (_, i) => i + 1)
+  const allTransactions = await Promise.all(
+    weeks.map(week => getTransactions(leagueId, week))
+  )
+  return allTransactions.flat().sort((a, b) => b.created - a.created)
+}
+
 export interface PlayoffMatchup {
   r: number // round
   m: number // matchup id
@@ -92,6 +131,12 @@ export interface PlayoffMatchup {
 
 export async function getWinnersBracket(leagueId: string): Promise<PlayoffMatchup[]> {
   const res = await fetch(`${BASE_URL}/league/${leagueId}/winners_bracket`)
+  if (!res.ok) return []
+  return res.json()
+}
+
+export async function getLosersBracket(leagueId: string): Promise<PlayoffMatchup[]> {
+  const res = await fetch(`${BASE_URL}/league/${leagueId}/losers_bracket`)
   if (!res.ok) return []
   return res.json()
 }
