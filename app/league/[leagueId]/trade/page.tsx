@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { SleeperPlayer, SleeperRoster, LeagueUser, TradedPick } from '@/lib/types'
 import { Skeleton, SkeletonTradeTeam } from '@/components/Skeleton'
+import PageHeader from '@/components/PageHeader'
 import {
   getSleeperPlayerValue,
   calculateTradeFairness,
@@ -29,8 +30,8 @@ interface TeamOption {
 }
 
 interface DropAdjustment {
-  player: PlayerWithInfo
-  value: number
+  players: PlayerWithInfo[]
+  totalValue: number
 }
 
 type TabType = 'players' | 'picks'
@@ -59,7 +60,7 @@ export default function TradePage() {
         const [rostersRes, usersRes, playersRes, tradedPicksRes, leagueRes] = await Promise.all([
           fetch(`https://api.sleeper.app/v1/league/${leagueId}/rosters`),
           fetch(`https://api.sleeper.app/v1/league/${leagueId}/users`),
-          fetch('https://api.sleeper.app/v1/players/nfl'),
+          fetch('/api/players'),
           fetch(`https://api.sleeper.app/v1/league/${leagueId}/traded_picks`),
           fetch(`https://api.sleeper.app/v1/league/${leagueId}`),
         ])
@@ -256,6 +257,9 @@ export default function TradePage() {
 
     if (postTradeSize <= rosterLimit) return null
 
+    // Calculate how many players need to be dropped
+    const playersToDropCount = postTradeSize - rosterLimit
+
     // Need to drop players - find the worst droppable player(s)
     // Get remaining roster after trade (exclude players being sent, exclude K and DEF)
     const remainingPlayers = team.players
@@ -268,17 +272,19 @@ export default function TradePage() {
       ...playersReceiving.filter(p => p.position !== 'K' && p.position !== 'DEF')
     ]
 
-    // Sort by value ascending to find worst player
+    // Sort by value ascending to find worst players
     allPostTradePlayers.sort((a, b) => a.value - b.value)
 
-    // The worst player would be dropped
-    const playerToDrop = allPostTradePlayers[0]
+    // Get the players that would need to be dropped
+    const playersToDrop = allPostTradePlayers.slice(0, playersToDropCount)
 
-    if (!playerToDrop) return null
+    if (playersToDrop.length === 0) return null
+
+    const totalValue = playersToDrop.reduce((sum, p) => sum + p.value, 0)
 
     return {
-      player: playerToDrop,
-      value: playerToDrop.value,
+      players: playersToDrop,
+      totalValue,
     }
   }
 
@@ -287,8 +293,8 @@ export default function TradePage() {
   // Team 2 receives team1Players, sends team2Players
   const team2DropAdjustment = calculateDropAdjustment(team2, team1Players, team2Players)
 
-  const team1DropValue = team1DropAdjustment?.value || 0
-  const team2DropValue = team2DropAdjustment?.value || 0
+  const team1DropValue = team1DropAdjustment?.totalValue || 0
+  const team2DropValue = team2DropAdjustment?.totalValue || 0
 
   const team1Total = team1PlayerTotal + team1PickTotal - team1DropValue
   const team2Total = team2PlayerTotal + team2PickTotal - team2DropValue
@@ -397,12 +403,11 @@ export default function TradePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold mb-2">Trade Analyzer</h1>
-        <p className="text-gray-400">
-          Compare player and draft pick values for dynasty trades
-        </p>
-      </div>
+      <PageHeader
+        title="Trade Analyzer"
+        subtitle="Compare player and draft pick values for dynasty trades"
+        icon="trade"
+      />
 
       {/* Trade Summary */}
       {hasAssets && (
@@ -462,16 +467,16 @@ export default function TradePage() {
                 {team2Players.length === 0 && team2Picks.length === 0 && (
                   <p className="text-gray-500 text-sm">Nothing selected</p>
                 )}
-                {team1DropAdjustment && (
-                  <div className="flex justify-between items-center bg-red-900/30 px-3 py-2 rounded border border-red-800">
+                {team1DropAdjustment && team1DropAdjustment.players.map((player, idx) => (
+                  <div key={player.player_id || idx} className="flex justify-between items-center bg-red-900/30 px-3 py-2 rounded border border-red-800">
                     <span className="text-sm text-red-300">
-                      Drop: {team1DropAdjustment.player.full_name}
+                      Drop: {player.full_name}
                     </span>
                     <span className="text-red-400 text-sm">
-                      -{team1DropAdjustment.value.toLocaleString()}
+                      -{player.value.toLocaleString()}
                     </span>
                   </div>
-                )}
+                ))}
               </div>
               <div className="mt-2 text-right">
                 {team1DropAdjustment && (
@@ -564,16 +569,16 @@ export default function TradePage() {
                 {team1Players.length === 0 && team1Picks.length === 0 && (
                   <p className="text-gray-500 text-sm">Nothing selected</p>
                 )}
-                {team2DropAdjustment && (
-                  <div className="flex justify-between items-center bg-red-900/30 px-3 py-2 rounded border border-red-800">
+                {team2DropAdjustment && team2DropAdjustment.players.map((player, idx) => (
+                  <div key={player.player_id || idx} className="flex justify-between items-center bg-red-900/30 px-3 py-2 rounded border border-red-800">
                     <span className="text-sm text-red-300">
-                      Drop: {team2DropAdjustment.player.full_name}
+                      Drop: {player.full_name}
                     </span>
                     <span className="text-red-400 text-sm">
-                      -{team2DropAdjustment.value.toLocaleString()}
+                      -{player.value.toLocaleString()}
                     </span>
                   </div>
-                )}
+                ))}
               </div>
               <div className="mt-2 text-right">
                 {team2DropAdjustment && (

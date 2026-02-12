@@ -491,10 +491,9 @@ export default function AgeCurveTab({ allPlayers }: AgeCurveTabProps) {
 
         {curveData.length > 0 && (
           <div className="mb-2">
-            <p className="text-gray-500 text-xs mb-1">Position Averages:</p>
             {curveData.map((entry, index) => (
               <p key={index} style={{ color: entry.color }} className="text-sm">
-                {entry.name}: {entry.value.toLocaleString()}
+                {entry.name.replace(' Curve', '')}: {entry.value.toLocaleString()}
               </p>
             ))}
           </div>
@@ -532,6 +531,11 @@ export default function AgeCurveTab({ allPlayers }: AgeCurveTabProps) {
 
   return (
     <div className="space-y-6">
+      {/* Disclaimer */}
+      <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-sm text-amber-200">
+        This feature is still in development. The exact method of analysis is being worked on.
+      </div>
+
       {/* Controls */}
       <div className="bg-sleeper-primary p-4 rounded-lg border border-sleeper-accent">
         <div className="flex flex-wrap items-center gap-4">

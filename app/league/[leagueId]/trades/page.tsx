@@ -1,14 +1,224 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Transaction } from '@/lib/sleeper'
+import PageHeader from '@/components/PageHeader'
 import { SleeperRoster, LeagueUser, SleeperPlayer, SleeperLeague } from '@/lib/types'
 
 interface TradeValues {
   values: { [playerName: string]: { atTrade: number | null; current: number } }
   pickValues: { [pickLabel: string]: { atTrade: number; current: number } }
+}
+
+interface TradePartner {
+  rosterId1: number
+  rosterId2: number
+  count: number
+}
+
+interface TradeNetworkProps {
+  rosters: RosterWithUser[]
+  tradePartners: TradePartner[]
+  getTeamName: (rosterId: number) => string
+}
+
+function TradeNetwork({ rosters, tradePartners, getTeamName }: TradeNetworkProps) {
+  const [selectedTeam, setSelectedTeam] = useState<number | null>(null)
+
+  // Get teams that have traded
+  const tradingTeams = useMemo(() => {
+    const teamIds = new Set<number>()
+    tradePartners.forEach(p => {
+      teamIds.add(p.rosterId1)
+      teamIds.add(p.rosterId2)
+    })
+    return rosters.filter(r => teamIds.has(r.roster_id))
+  }, [rosters, tradePartners])
+
+  // Get connections for selected team
+  const connections = useMemo(() => {
+    if (!selectedTeam) return []
+    return tradePartners
+      .filter(p => p.rosterId1 === selectedTeam || p.rosterId2 === selectedTeam)
+      .map(p => ({
+        partnerId: p.rosterId1 === selectedTeam ? p.rosterId2 : p.rosterId1,
+        count: p.count
+      }))
+      .sort((a, b) => b.count - a.count)
+  }, [selectedTeam, tradePartners])
+
+  // Get teams with no trades
+  const noTradeTeams = useMemo(() => {
+    if (!selectedTeam) return []
+    const partnerIds = new Set(connections.map(c => c.partnerId))
+    return rosters
+      .filter(r => r.roster_id !== selectedTeam && !partnerIds.has(r.roster_id))
+      .map(r => getTeamName(r.roster_id))
+  }, [selectedTeam, connections, rosters, getTeamName])
+
+  const totalTrades = connections.reduce((sum, c) => sum + c.count, 0)
+
+  // Colors for pie segments
+  const colors = [
+    '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899',
+    '#14b8a6', '#f97316', '#06b6d4', '#a855f7', '#ef4444',
+    '#84cc16', '#6366f1'
+  ]
+
+  // Calculate pie segments
+  const segments = useMemo(() => {
+    if (totalTrades === 0) return []
+
+    let currentAngle = -90 // Start from top
+    return connections.map((conn, idx) => {
+      const percentage = conn.count / totalTrades
+      const angle = percentage * 360
+      const startAngle = currentAngle
+      const endAngle = currentAngle + angle
+      currentAngle = endAngle
+
+      // Calculate arc path
+      const radius = 80
+      const innerRadius = 50
+      const centerX = 100
+      const centerY = 100
+
+      const startRad = (startAngle * Math.PI) / 180
+      const endRad = (endAngle * Math.PI) / 180
+
+      const x1 = centerX + radius * Math.cos(startRad)
+      const y1 = centerY + radius * Math.sin(startRad)
+      const x2 = centerX + radius * Math.cos(endRad)
+      const y2 = centerY + radius * Math.sin(endRad)
+      const x3 = centerX + innerRadius * Math.cos(endRad)
+      const y3 = centerY + innerRadius * Math.sin(endRad)
+      const x4 = centerX + innerRadius * Math.cos(startRad)
+      const y4 = centerY + innerRadius * Math.sin(startRad)
+
+      const largeArc = angle > 180 ? 1 : 0
+
+      const path = `
+        M ${x1} ${y1}
+        A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2}
+        L ${x3} ${y3}
+        A ${innerRadius} ${innerRadius} 0 ${largeArc} 0 ${x4} ${y4}
+        Z
+      `
+
+      return {
+        ...conn,
+        path,
+        color: colors[idx % colors.length],
+        percentage
+      }
+    })
+  }, [connections, totalTrades])
+
+  return (
+    <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
+      <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">
+        Trade Partners
+      </h3>
+
+      {/* Team Selector */}
+      <div className="mb-4">
+        <select
+          value={selectedTeam || ''}
+          onChange={(e) => setSelectedTeam(e.target.value ? Number(e.target.value) : null)}
+          className="w-full sm:w-auto bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+        >
+          <option value="">Select a team...</option>
+          {tradingTeams.map(roster => (
+            <option key={roster.roster_id} value={roster.roster_id}>
+              {getTeamName(roster.roster_id)}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Donut Chart */}
+      {selectedTeam ? (
+        <div className="space-y-6">
+          {/* Chart - Centered */}
+          <div className="flex justify-center">
+            <div className="relative">
+              <svg viewBox="0 0 200 200" className="w-64 h-64 sm:w-72 sm:h-72 drop-shadow-lg">
+                {/* Background circle for empty state or visual depth */}
+                <circle
+                  cx="100"
+                  cy="100"
+                  r="75"
+                  fill="none"
+                  stroke="#1f2937"
+                  strokeWidth="35"
+                />
+                {segments.length > 0 ? (
+                  segments.map((segment) => (
+                    <path
+                      key={segment.partnerId}
+                      d={segment.path}
+                      fill={segment.color}
+                      className="hover:brightness-110 transition-all duration-200 cursor-pointer"
+                      style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))' }}
+                    >
+                      <title>{getTeamName(segment.partnerId)}: {segment.count} trade{segment.count !== 1 ? 's' : ''}</title>
+                    </path>
+                  ))
+                ) : null}
+              </svg>
+              {/* Center text */}
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="text-center px-4">
+                  <div className="text-white font-bold text-base sm:text-lg leading-tight max-w-[100px] mx-auto">
+                    {getTeamName(selectedTeam).length > 15
+                      ? getTeamName(selectedTeam).split(' ').slice(0, 2).join(' ')
+                      : getTeamName(selectedTeam)
+                    }
+                  </div>
+                  <div className="text-amber-500 font-bold text-3xl sm:text-4xl mt-1">{totalTrades}</div>
+                  <div className="text-gray-400 text-sm">total trades</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Legend - Centered grid */}
+          {segments.length > 0 && (
+            <div className="flex justify-center">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-2 text-sm">
+                {segments.map((segment) => (
+                  <div key={segment.partnerId} className="flex items-center gap-2">
+                    <div
+                      className="w-3 h-3 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: segment.color }}
+                    />
+                    <span className="text-gray-300 truncate max-w-[120px]">{getTeamName(segment.partnerId)}</span>
+                    <span className="text-amber-500 font-semibold">{segment.count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* No trades with */}
+          {noTradeTeams.length > 0 && (
+            <div className="pt-4 border-t border-gray-700 text-center">
+              <p className="text-gray-500 text-sm">
+                <span className="text-gray-400 font-medium">No trades with:</span>{' '}
+                <span className="text-gray-500">{noTradeTeams.join(', ')}</span>
+              </p>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="h-64 flex items-center justify-center text-gray-500 text-sm">
+          Select a team to view their trade partners
+        </div>
+      )}
+    </div>
+  )
 }
 
 interface TeamStats {
@@ -45,7 +255,7 @@ export default function TradeHistory() {
           fetch(`https://api.sleeper.app/v1/league/${leagueId}`),
           fetch(`https://api.sleeper.app/v1/league/${leagueId}/rosters`),
           fetch(`https://api.sleeper.app/v1/league/${leagueId}/users`),
-          fetch('https://api.sleeper.app/v1/players/nfl'),
+          fetch('/api/players'),
         ])
 
         const leagueData: SleeperLeague = await leagueRes.json()
@@ -256,6 +466,26 @@ export default function TradeHistory() {
     return (statsB?.tradesCompleted || 0) - (statsA?.tradesCompleted || 0)
   })
 
+  // Calculate trade partnerships
+  const tradePartners = useMemo(() => {
+    const partnerships = new Map<string, number>()
+
+    filteredTrades.forEach(trade => {
+      if (trade.roster_ids.length === 2) {
+        const [a, b] = trade.roster_ids.sort((x, y) => x - y)
+        const key = `${a}-${b}`
+        partnerships.set(key, (partnerships.get(key) || 0) + 1)
+      }
+    })
+
+    return Array.from(partnerships.entries())
+      .map(([key, count]) => {
+        const [a, b] = key.split('-').map(Number)
+        return { rosterId1: a, rosterId2: b, count }
+      })
+      .sort((a, b) => b.count - a.count)
+  }, [filteredTrades])
+
   // Parse trade with value calculations
   const parseTrade = (trade: Transaction) => {
     const tradeData = tradeValues[trade.transaction_id] || { values: {}, pickValues: {} }
@@ -399,25 +629,20 @@ export default function TradeHistory() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <div className="flex items-center gap-2 text-sm text-gray-400 mb-2">
-          <Link href={`/league/${leagueId}${userId ? `?userId=${userId}` : ''}`} className="hover:text-amber-500">
-            {league?.name || 'League'}
-          </Link>
-          <span>/</span>
-          <span>Trade History</span>
-        </div>
-        <h1 className="text-2xl sm:text-3xl font-bold">Trade History</h1>
-        <p className="text-gray-400 mt-1">
-          {filteredTrades.length} trade{filteredTrades.length !== 1 ? 's' : ''} • {league?.season} Football Year
-          {footballYear && (
-            <span className="text-gray-500 text-sm ml-1">
-              (Mar '{league?.season.slice(-2)} - Feb '{String(parseInt(league?.season || '0') + 1).slice(-2)})
-            </span>
-          )}
-        </p>
-      </div>
+      <PageHeader
+        title="Trade History"
+        subtitle={`${filteredTrades.length} trade${filteredTrades.length !== 1 ? 's' : ''} this ${league?.season} football year`}
+        icon="trades"
+      />
+
+      {/* Trade Network Visualization */}
+      {filteredTrades.length > 0 && (
+        <TradeNetwork
+          rosters={rostersWithUsers}
+          tradePartners={tradePartners}
+          getTeamName={getTeamName}
+        />
+      )}
 
       {/* Trade Stats Table */}
       <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">

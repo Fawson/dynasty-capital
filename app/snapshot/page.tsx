@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import PageHeader from '@/components/PageHeader'
 import {
   LineChart,
   Line,
@@ -106,10 +107,11 @@ export default function SnapshotGame() {
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold mb-2">Snapshot</h1>
-            <p className="text-gray-500">Guess the player from their dynasty value chart</p>
-          </div>
+          <PageHeader
+            title="Snapshot"
+            subtitle="Guess the player from their dynasty value chart"
+            icon="snapshot"
+          />
           <Link
             href="/"
             className="text-gray-400 hover:text-amber-500 transition-colors"

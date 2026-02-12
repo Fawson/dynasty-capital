@@ -37,6 +37,7 @@ export default function Navigation({ leagueId, leagueName }: NavigationProps) {
         { href: `${basePath}/teams${userQuery}`, label: 'Teams' },
         { href: `${basePath}/matchups${userQuery}`, label: 'Matchups' },
         { href: `${basePath}/draft${userQuery}`, label: 'Draft Board' },
+        { href: `${basePath}/what-if${userQuery}`, label: 'What If' },
       ],
     },
     {
@@ -59,9 +60,9 @@ export default function Navigation({ leagueId, leagueName }: NavigationProps) {
         </svg>
       ),
       items: [
-        { href: `${basePath}/player-analysis${userQuery}`, label: 'Player Deep Dive' },
-        { href: `${basePath}/value${userQuery}`, label: 'Value Analyzer' },
-        { href: `${basePath}/what-if${userQuery}`, label: 'What If' },
+        { href: `${basePath}/player-analysis${userQuery}`, label: 'Player Analysis' },
+        { href: `${basePath}/value${userQuery}`, label: 'League Value' },
+        { href: `${basePath}/nfl-production${userQuery}`, label: 'NFL Team Production' },
       ],
     },
     {
@@ -74,6 +75,18 @@ export default function Navigation({ leagueId, leagueName }: NavigationProps) {
       ),
       items: [
         { href: '/snapshot', label: 'Snapshot' },
+      ],
+    },
+    {
+      title: 'More',
+      icon: (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      ),
+      items: [
+        { href: `${basePath}/resources${userQuery}`, label: 'Other Resources' },
+        { href: `${basePath}/about${userQuery}`, label: 'About' },
       ],
     },
   ]

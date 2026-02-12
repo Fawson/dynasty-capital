@@ -1,6 +1,9 @@
 import { getLeague, getLeagueRosters, getLeagueUsers } from '@/lib/sleeper'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
+import PageHeader from '@/components/PageHeader'
+
+export const dynamic = 'force-dynamic'
 
 export default async function TeamsPage({
   params,
@@ -43,12 +46,11 @@ export default async function TeamsPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold mb-1">Teams</h1>
-        <p className="text-gray-500">
-          Top {playoffTeams} teams make the playoffs
-        </p>
-      </div>
+      <PageHeader
+        title="Teams"
+        subtitle={`Top ${playoffTeams} teams make the playoffs`}
+        icon="teams"
+      />
 
       <div className="overflow-x-auto rounded-lg">
         <table className="w-full min-w-[500px]">
@@ -101,24 +103,12 @@ export default async function TeamsPage({
                     isUserTeam
                       ? 'bg-amber-500/10 border-l-4 border-l-amber-500'
                       : inPlayoffs
-                      ? 'bg-emerald-900/10'
-                      : ''
+                      ? 'border-l-4 border-l-emerald-500'
+                      : 'border-l-4 border-l-transparent'
                   } hover:bg-gray-800/50 transition-colors`}
                 >
                   <td className="px-3 sm:px-4 py-4">
-                    <span
-                      className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-sm font-bold ${
-                        index === 0
-                          ? 'bg-amber-500 text-gray-900'
-                          : index === 1
-                          ? 'bg-gray-400 text-gray-900'
-                          : index === 2
-                          ? 'bg-amber-700 text-white'
-                          : inPlayoffs
-                          ? 'bg-emerald-800 text-white'
-                          : 'text-gray-500'
-                      }`}
-                    >
+                    <span className="text-gray-400 font-medium">
                       {index + 1}
                     </span>
                   </td>
@@ -170,11 +160,11 @@ export default async function TeamsPage({
 
       <div className="flex gap-6 text-sm text-gray-500">
         <div className="flex items-center gap-2">
-          <span className="w-3 h-3 rounded bg-emerald-800"></span>
+          <span className="w-1 h-4 rounded-sm bg-emerald-500"></span>
           <span>Playoff Position</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="w-3 h-3 rounded bg-amber-500"></span>
+          <span className="w-1 h-4 rounded-sm bg-amber-500"></span>
           <span>Your Team</span>
         </div>
       </div>

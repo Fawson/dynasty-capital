@@ -30,6 +30,7 @@ export default function AllPlayersTab({
   const [sortBy, setSortBy] = useState<'value' | 'name'>('value')
   const [searchQuery, setSearchQuery] = useState('')
   const [freeAgentsOnly, setFreeAgentsOnly] = useState(false)
+  const [rookiesOnly, setRookiesOnly] = useState(false)
 
   const players = useMemo(() => {
     const userMap = new Map(users.map((u) => [u.user_id, u]))
@@ -108,6 +109,7 @@ export default function AllPlayersTab({
   const filteredPlayers = players
     .filter((p) => filter === 'ALL' || p.position === filter)
     .filter((p) => !freeAgentsOnly || p.ownerName === 'Free Agent')
+    .filter((p) => !rookiesOnly || p.years_exp === 1)
     .filter((p) => {
       if (!searchQuery.trim()) return true
       const query = searchQuery.toLowerCase()
@@ -230,6 +232,16 @@ export default function AllPlayersTab({
             }`}
           >
             Free Agents Only
+          </button>
+          <button
+            onClick={() => setRookiesOnly(!rookiesOnly)}
+            className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+              rookiesOnly
+                ? 'bg-amber-500 text-white'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            Rookies Only
           </button>
         </div>
       </div>

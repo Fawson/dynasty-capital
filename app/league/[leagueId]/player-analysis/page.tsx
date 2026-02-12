@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import { SleeperPlayer, SleeperRoster, LeagueUser } from '@/lib/types'
 import { Skeleton, SkeletonPlayerList } from '@/components/Skeleton'
+import PageHeader from '@/components/PageHeader'
 import AllPlayersTab from '@/components/players/AllPlayersTab'
 import DeepDiveTab from '@/components/players/DeepDiveTab'
 import CompareTab from '@/components/players/CompareTab'
@@ -17,7 +18,7 @@ const TABS: { id: TabType; label: string; description: string }[] = [
   { id: 'deep-dive', label: 'Deep Dive', description: 'Detailed player analysis' },
   { id: 'compare', label: 'Compare', description: 'Compare multiple players' },
   { id: 'age-curve', label: 'Age Curves', description: 'Dynasty value by age' },
-  { id: 'news', label: 'News', description: 'Latest player news and updates' },
+  { id: 'news', label: 'News', description: 'Latest NFL news from around the league' },
 ]
 
 export default function PlayerAnalysisPage() {
@@ -40,7 +41,7 @@ export default function PlayerAnalysisPage() {
         const [rostersRes, usersRes, playersRes] = await Promise.all([
           fetch(`https://api.sleeper.app/v1/league/${leagueId}/rosters`),
           fetch(`https://api.sleeper.app/v1/league/${leagueId}/users`),
-          fetch('https://api.sleeper.app/v1/players/nfl'),
+          fetch('/api/players'),
         ])
 
         const rostersData: SleeperRoster[] = await rostersRes.json()
@@ -84,12 +85,11 @@ export default function PlayerAnalysisPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold mb-2">Player Analysis</h1>
-        <p className="text-gray-400">
-          {TABS.find(t => t.id === activeTab)?.description}
-        </p>
-      </div>
+      <PageHeader
+        title="Player Analysis"
+        subtitle={TABS.find(t => t.id === activeTab)?.description}
+        icon="analysis"
+      />
 
       {/* Tab Navigation */}
       <div className="flex flex-wrap gap-2 border-b border-sleeper-accent pb-4">
@@ -145,11 +145,7 @@ export default function PlayerAnalysisPage() {
       )}
 
       {activeTab === 'news' && (
-        <NewsTab
-          allPlayers={allPlayers}
-          rosters={rosters}
-          users={users}
-        />
+        <NewsTab />
       )}
     </div>
   )

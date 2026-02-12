@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import { SleeperMatchup, SleeperRoster, LeagueUser, SleeperLeague } from '@/lib/types'
 import { getAvatarUrl } from '@/lib/sleeper'
 import { Skeleton, SkeletonCard } from '@/components/Skeleton'
+import PageHeader from '@/components/PageHeader'
 
 interface TeamData {
   rosterId: number
@@ -345,12 +346,11 @@ export default function WhatIfPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold mb-2">What If...</h1>
-        <p className="text-gray-400">
-          See what would happen if two teams swapped their schedules for the season
-        </p>
-      </div>
+      <PageHeader
+        title="What If..."
+        subtitle="See what would've happened if two teams swapped their schedules"
+        icon="whatif"
+      />
 
       {/* Team Selection */}
       <div className="bg-sleeper-primary p-4 rounded-lg border border-sleeper-accent">

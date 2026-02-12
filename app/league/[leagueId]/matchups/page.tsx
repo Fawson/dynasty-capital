@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { Skeleton, SkeletonMatchup } from '@/components/Skeleton'
+import PageHeader from '@/components/PageHeader'
 import { SleeperMatchup, SleeperRoster, LeagueUser, SleeperLeague } from '@/lib/types'
 import { getCurrentWeek, getAvatarUrl } from '@/lib/sleeper'
 
@@ -149,10 +150,11 @@ export default function MatchupsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold mb-2">Matchups</h1>
-          <p className="text-gray-400">Week {week} matchups</p>
-        </div>
+        <PageHeader
+          title="Matchups"
+          subtitle={`Week ${week} matchups`}
+          icon="matchups"
+        />
 
         <div className="flex items-center gap-2">
           <button

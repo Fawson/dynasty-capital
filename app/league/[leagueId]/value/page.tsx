@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { Skeleton, SkeletonCard } from '@/components/Skeleton'
+import PageHeader from '@/components/PageHeader'
 import { SleeperPlayer, SleeperRoster, LeagueUser, TradedPick } from '@/lib/types'
 import {
   getSleeperPlayerValue,
@@ -39,7 +40,7 @@ export default function ValueAnalyzerPage() {
         const [rostersRes, usersRes, playersRes, tradedPicksRes] = await Promise.all([
           fetch(`https://api.sleeper.app/v1/league/${leagueId}/rosters`),
           fetch(`https://api.sleeper.app/v1/league/${leagueId}/users`),
-          fetch('https://api.sleeper.app/v1/players/nfl'),
+          fetch('/api/players'),
           fetch(`https://api.sleeper.app/v1/league/${leagueId}/traded_picks`),
         ])
 
@@ -273,12 +274,11 @@ export default function ValueAnalyzerPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold mb-2">Value Analyzer</h1>
-        <p className="text-gray-400">
-          Total dynasty value for each team (players + draft picks)
-        </p>
-      </div>
+      <PageHeader
+        title="League Value"
+        subtitle="Total dynasty value for each team (players + draft picks)"
+        icon="value"
+      />
 
       {/* Summary Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

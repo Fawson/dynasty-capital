@@ -89,9 +89,16 @@ export default function Home() {
               <span className="font-serif">Dynasty</span>{' '}
               <span className="font-serif text-[#1B6B5A]">Capital</span>
             </h1>
-          <p className="text-gray-400">
-            Analyze your Sleeper fantasy football league with advanced stats and trade tools
+          <p className="text-gray-400 italic">
+            It&apos;s a Numbers Game
           </p>
+        </div>
+
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 mb-8 text-sm text-amber-200">
+          Welcome to Dynasty Capital! The site is still new and completely a passion project. Please{' '}
+          <Link href="/about" className="underline hover:text-amber-100">give feedback</Link>{' '}
+          if you&apos;d like, and enjoy the tools!
+          <br />- Jake
         </div>
 
         <form onSubmit={handleSubmit} className="mb-8">
@@ -216,6 +223,27 @@ export default function Home() {
               </span>
             </div>
           </Link>
+        </div>
+
+        {/* Footer */}
+        <div className="mt-12 pt-8 border-t border-gray-800 text-center space-y-4">
+          <Link
+            href="/about"
+            className="text-gray-500 hover:text-amber-500 transition-colors text-sm"
+          >
+            About
+          </Link>
+          <p className="text-gray-600 text-xs">
+            Player values sourced from{' '}
+            <a
+              href="https://keeptradecut.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-gray-400 transition-colors"
+            >
+              KeepTradeCut
+            </a>
+          </p>
         </div>
       </div>
     </main>

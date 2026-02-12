@@ -19,6 +19,7 @@ export interface SleeperLeague {
   settings: LeagueSettings
   scoring_settings: Record<string, number>
   avatar: string | null
+  previous_league_id: string | null
 }
 
 export interface LeagueSettings {

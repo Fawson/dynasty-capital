@@ -3,6 +3,8 @@ import { getLeague } from '@/lib/sleeper'
 import Navigation from '@/components/Navigation'
 import { notFound } from 'next/navigation'
 
+export const dynamic = 'force-dynamic'
+
 export default async function LeagueLayout({
   children,
   params,
@@ -25,6 +27,16 @@ export default async function LeagueLayout({
       {/* Main content - offset for sidebar on desktop, offset for header on mobile */}
       <main className="lg:ml-56 pt-14 lg:pt-0">
         <div className="px-6 lg:px-8 py-8">{children}</div>
+        <footer className="px-6 lg:px-8 pb-8 pt-4 border-t border-gray-800">
+          <div className="flex justify-center">
+            <a
+              href={`/league/${leagueId}/about`}
+              className="text-gray-500 hover:text-amber-500 transition-colors text-sm"
+            >
+              About
+            </a>
+          </div>
+        </footer>
       </main>
     </div>
   )

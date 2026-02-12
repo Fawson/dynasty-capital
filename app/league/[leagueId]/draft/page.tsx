@@ -6,6 +6,9 @@ import {
 } from '@/lib/sleeper'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
+import PageHeader from '@/components/PageHeader'
+
+export const dynamic = 'force-dynamic'
 
 export default async function DraftBoard({
   params,
@@ -106,17 +109,11 @@ export default async function DraftBoard({
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <div className="flex items-center gap-2 text-sm text-gray-400 mb-2">
-          <Link href={`/league/${leagueId}${userId ? `?userId=${userId}` : ''}`} className="hover:text-amber-500">
-            {league.name}
-          </Link>
-          <span>/</span>
-          <span>Draft Board</span>
-        </div>
-        <h1 className="text-2xl sm:text-3xl font-bold">{activeSeason} Draft Board</h1>
-      </div>
+      <PageHeader
+        title={`${activeSeason} Draft Board`}
+        subtitle="View and track draft picks across teams"
+        icon="draft"
+      />
 
       {/* Season Tabs */}
       <div className="flex gap-2">
