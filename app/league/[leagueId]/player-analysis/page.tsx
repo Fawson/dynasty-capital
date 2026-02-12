@@ -27,6 +27,7 @@ export default function PlayerAnalysisPage() {
   const leagueId = params.leagueId as string
   const initialPlayerId = searchParams.get('playerId')
   const initialTab = searchParams.get('tab') as TabType | null
+  const userId = searchParams.get('userId')
 
   const [allPlayers, setAllPlayers] = useState<Record<string, SleeperPlayer>>({})
   const [rosters, setRosters] = useState<SleeperRoster[]>([])
@@ -115,6 +116,7 @@ export default function PlayerAnalysisPage() {
           allPlayers={allPlayers}
           rosters={rosters}
           users={users}
+          userId={userId}
           onSelectPlayer={handleSelectPlayer}
         />
       )}

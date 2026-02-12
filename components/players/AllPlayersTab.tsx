@@ -10,6 +10,7 @@ interface AllPlayersTabProps {
   allPlayers: Record<string, SleeperPlayer>
   rosters: SleeperRoster[]
   users: LeagueUser[]
+  userId?: string | null
   onSelectPlayer?: (playerId: string) => void
 }
 
@@ -24,8 +25,15 @@ export default function AllPlayersTab({
   allPlayers,
   rosters,
   users,
+  userId,
   onSelectPlayer,
 }: AllPlayersTabProps) {
+  // Find the user's roster_id for highlighting
+  const userRosterId = useMemo(() => {
+    if (!userId) return null
+    const roster = rosters.find(r => r.owner_id === userId)
+    return roster?.roster_id ?? null
+  }, [userId, rosters])
   const [filter, setFilter] = useState<string>('ALL')
   const [sortBy, setSortBy] = useState<'value' | 'name'>('value')
   const [searchQuery, setSearchQuery] = useState('')
@@ -261,10 +269,14 @@ export default function AllPlayersTab({
             </tr>
           </thead>
           <tbody className="divide-y divide-sleeper-accent">
-            {filteredPlayers.slice(0, 100).map((player, index) => (
+            {filteredPlayers.slice(0, 100).map((player, index) => {
+              const isUserPlayer = userRosterId !== null && player.rosterId === userRosterId
+              return (
               <tr
                 key={player.player_id}
-                className="hover:bg-sleeper-accent/50 transition-colors cursor-pointer"
+                className={`hover:bg-sleeper-accent/50 transition-colors cursor-pointer ${
+                  isUserPlayer ? 'bg-amber-500/10 border-l-4 border-l-amber-500' : ''
+                }`}
                 onClick={() => onSelectPlayer?.(player.player_id)}
               >
                 <td className="px-3 sm:px-4 py-3 text-gray-500">{index + 1}</td>
@@ -300,7 +312,8 @@ export default function AllPlayersTab({
                   {player.value.toLocaleString()}
                 </td>
               </tr>
-            ))}
+            )})}
+
           </tbody>
         </table>
       </div>
