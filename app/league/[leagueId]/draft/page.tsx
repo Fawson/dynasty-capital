@@ -49,14 +49,32 @@ export default async function DraftBoard({
   // Get draft rounds (typically 3-5 for dynasty)
   const draftRounds = league.settings?.draft_rounds || 4
 
+  // Check if current league has meaningful standings
+  const totalWins = rosters.reduce((sum, r) => sum + (r.settings.wins || 0), 0)
+
+  // If no games played yet, try to get previous season's standings for draft order
+  let standingsRosters = rostersWithUsers
+  if (totalWins === 0 && league.previous_league_id) {
+    const prevRosters = await getLeagueRosters(league.previous_league_id)
+    const prevTotalWins = prevRosters.reduce((sum, r) => sum + (r.settings.wins || 0), 0)
+    if (prevTotalWins > 0) {
+      // Map previous rosters to include user info from current league
+      standingsRosters = prevRosters.map((roster) => ({
+        ...roster,
+        user: userMap.get(roster.owner_id),
+      }))
+    }
+  }
+
   // Sort rosters by standings (worst record picks first - typical draft order)
-  const sortedRosters = [...rostersWithUsers].sort((a, b) => {
+  // Uses previous season standings if current season hasn't started
+  const sortedRosters = [...standingsRosters].sort((a, b) => {
     if (a.settings.wins !== b.settings.wins) {
       return a.settings.wins - b.settings.wins // Worse record = earlier pick
     }
     return (
-      (a.settings.fpts + a.settings.fpts_decimal / 100) -
-      (b.settings.fpts + b.settings.fpts_decimal / 100)
+      ((a.settings.fpts || 0) + (a.settings.fpts_decimal || 0) / 100) -
+      ((b.settings.fpts || 0) + (b.settings.fpts_decimal || 0) / 100)
     )
   })
 

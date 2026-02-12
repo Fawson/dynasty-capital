@@ -37,13 +37,15 @@ export default function ValueAnalyzerPage() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const [rostersRes, usersRes, playersRes, tradedPicksRes] = await Promise.all([
+        const [leagueRes, rostersRes, usersRes, playersRes, tradedPicksRes] = await Promise.all([
+          fetch(`https://api.sleeper.app/v1/league/${leagueId}`),
           fetch(`https://api.sleeper.app/v1/league/${leagueId}/rosters`),
           fetch(`https://api.sleeper.app/v1/league/${leagueId}/users`),
           fetch('/api/players'),
           fetch(`https://api.sleeper.app/v1/league/${leagueId}/traded_picks`),
         ])
 
+        const league = await leagueRes.json()
         const rosters: SleeperRoster[] = await rostersRes.json()
         const users: LeagueUser[] = await usersRes.json()
         const allPlayers: Record<string, SleeperPlayer> = await playersRes.json()
@@ -52,18 +54,38 @@ export default function ValueAnalyzerPage() {
         const userMap = new Map(users.map((u) => [u.user_id, u]))
         const totalTeams = rosters.length
 
+        // Check if current league has meaningful standings
+        const totalWins = rosters.reduce((sum, r) => sum + (r.settings.wins || 0), 0)
+
+        // If no games played yet, try to get previous season's standings
+        let standingsRosters = rosters
+        if (totalWins === 0 && league.previous_league_id) {
+          try {
+            const prevRostersRes = await fetch(`https://api.sleeper.app/v1/league/${league.previous_league_id}/rosters`)
+            const prevRosters: SleeperRoster[] = await prevRostersRes.json()
+            // Only use if previous league has data
+            const prevTotalWins = prevRosters.reduce((sum, r) => sum + (r.settings.wins || 0), 0)
+            if (prevTotalWins > 0) {
+              standingsRosters = prevRosters
+            }
+          } catch {
+            // Fall back to current rosters
+          }
+        }
+
         // Sort rosters by standings to determine pick positions
-        const sortedRosters = [...rosters].sort((a, b) => {
+        // Use standingsRosters (may be from previous season if current has no data)
+        const sortedRosters = [...standingsRosters].sort((a, b) => {
           if (b.settings.wins !== a.settings.wins) {
             return b.settings.wins - a.settings.wins
           }
           return (
-            b.settings.fpts + b.settings.fpts_decimal / 100 -
-            (a.settings.fpts + a.settings.fpts_decimal / 100)
+            (b.settings.fpts || 0) + (b.settings.fpts_decimal || 0) / 100 -
+            ((a.settings.fpts || 0) + (a.settings.fpts_decimal || 0) / 100)
           )
         })
 
-        // Create standings map
+        // Create standings map (roster_id -> rank, where 1 = best, 10 = worst)
         const standingsMap = new Map<number, number>()
         sortedRosters.forEach((roster, index) => {
           standingsMap.set(roster.roster_id, index + 1)

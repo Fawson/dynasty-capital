@@ -78,15 +78,34 @@ export default function TradePage() {
         const userMap = new Map(users.map((u) => [u.user_id, u]))
         const totalTeams = rosters.length
 
+        // Check if current league has meaningful standings
+        const totalWins = rosters.reduce((sum, r) => sum + (r.settings.wins || 0), 0)
+
+        // If no games played yet, try to get previous season's standings
+        let standingsRosters = rosters
+        if (totalWins === 0 && league.previous_league_id) {
+          try {
+            const prevRostersRes = await fetch(`https://api.sleeper.app/v1/league/${league.previous_league_id}/rosters`)
+            const prevRosters: SleeperRoster[] = await prevRostersRes.json()
+            // Only use if previous league has data
+            const prevTotalWins = prevRosters.reduce((sum, r) => sum + (r.settings.wins || 0), 0)
+            if (prevTotalWins > 0) {
+              standingsRosters = prevRosters
+            }
+          } catch {
+            // Fall back to current rosters
+          }
+        }
+
         // Sort rosters by standings (wins, then points) to determine pick positions
-        // This represents "last year's" standings for pick valuation
-        const sortedRosters = [...rosters].sort((a, b) => {
+        // Uses previous season standings if current season hasn't started
+        const sortedRosters = [...standingsRosters].sort((a, b) => {
           if (b.settings.wins !== a.settings.wins) {
             return b.settings.wins - a.settings.wins
           }
           return (
-            b.settings.fpts + b.settings.fpts_decimal / 100 -
-            (a.settings.fpts + a.settings.fpts_decimal / 100)
+            (b.settings.fpts || 0) + (b.settings.fpts_decimal || 0) / 100 -
+            ((a.settings.fpts || 0) + (a.settings.fpts_decimal || 0) / 100)
           )
         })
 
