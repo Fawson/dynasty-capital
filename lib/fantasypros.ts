@@ -24,20 +24,21 @@ export interface DraftPick {
 
 // Draft pick value chart (dynasty format)
 // Values based on typical dynasty trade calculators
-const DRAFT_PICK_VALUES: Record<string, Record<string, Record<string, number>>> = {
-  '2026': {
+// Keys are relative years: 1 = next year, 2 = year after, 3 = two years out
+const DRAFT_PICK_VALUES_BY_OFFSET: Record<number, Record<string, Record<string, number>>> = {
+  1: { // Next year's draft (most valuable)
     '1': { early: 8500, mid: 7000, late: 5500 },
     '2': { early: 4000, mid: 3000, late: 2000 },
     '3': { early: 1500, mid: 1200, late: 900 },
     '4': { early: 700, mid: 500, late: 300 },
   },
-  '2027': {
+  2: { // Year after next
     '1': { early: 7500, mid: 6000, late: 4500 },
     '2': { early: 3500, mid: 2500, late: 1700 },
     '3': { early: 1300, mid: 1000, late: 700 },
     '4': { early: 500, mid: 400, late: 250 },
   },
-  '2028': {
+  3: { // Two years out
     '1': { early: 6500, mid: 5000, late: 3800 },
     '2': { early: 3000, mid: 2200, late: 1500 },
     '3': { early: 1100, mid: 800, late: 600 },
@@ -45,21 +46,31 @@ const DRAFT_PICK_VALUES: Record<string, Record<string, Record<string, number>>> 
   },
 }
 
+// Helper to get current season
+function getCurrentSeasonYear(): number {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = now.getMonth()
+  return month === 0 ? year - 1 : year
+}
+
 // Get all available draft picks for trade calculator
 export function getAvailableDraftPicks(): DraftPick[] {
   const picks: DraftPick[] = []
-  const years = ['2026', '2027', '2028']
+  const currentSeason = getCurrentSeasonYear()
+  const years = [currentSeason + 1, currentSeason + 2, currentSeason + 3]
   const rounds = ['1', '2', '3', '4']
   const positions: Array<'early' | 'mid' | 'late'> = ['early', 'mid', 'late']
 
-  years.forEach((year) => {
+  years.forEach((year, yearIndex) => {
+    const yearOffset = yearIndex + 1 // 1, 2, or 3
     rounds.forEach((round) => {
       positions.forEach((position) => {
-        const value = DRAFT_PICK_VALUES[year]?.[round]?.[position] || 100
+        const value = DRAFT_PICK_VALUES_BY_OFFSET[yearOffset]?.[round]?.[position] || 100
         const posLabel = position.charAt(0).toUpperCase() + position.slice(1)
         picks.push({
           id: `${year}-${round}-${position}`,
-          year: parseInt(year),
+          year,
           round: parseInt(round),
           position,
           value,
@@ -79,29 +90,44 @@ function getOrdinal(n: number): string {
   return n + (suffixes[(v - 20) % 10] || suffixes[v] || suffixes[0])
 }
 
-// Get draft pick value
+// Get draft pick value based on year offset from current season
 export function getDraftPickValue(
   year: number,
   round: number,
   position: 'early' | 'mid' | 'late'
 ): number {
-  return DRAFT_PICK_VALUES[year.toString()]?.[round.toString()]?.[position] || 100
+  const currentSeason = getCurrentSeasonYear()
+  const yearOffset = year - currentSeason
+  // Clamp offset to 1-3 range
+  const clampedOffset = Math.max(1, Math.min(3, yearOffset))
+  return DRAFT_PICK_VALUES_BY_OFFSET[clampedOffset]?.[round.toString()]?.[position] || 100
 }
 
 // Determine pick position (early/mid/late) based on standings rank and year
-// For upcoming draft (2026): use early (low) or late (high) based on standings
-// For future drafts (2027+): always use mid
+// For upcoming draft (next year): use early or late based on standings
+// For future drafts beyond that: always use mid
 export function getPickPosition(
   standingsRank: number,
   totalTeams: number,
-  year: number = 2026
+  year: number,
+  currentSeasonYear?: number
 ): 'early' | 'mid' | 'late' {
-  // Future drafts are always valued as mid
-  if (year > 2026) {
+  // Get current season dynamically if not provided
+  const now = new Date()
+  const currentYear = now.getFullYear()
+  const month = now.getMonth()
+  // January is still previous year's season, February onwards is current year
+  const currentSeason = currentSeasonYear ?? (month === 0 ? currentYear - 1 : currentYear)
+
+  // The upcoming draft year is currentSeason + 1 (e.g., 2026 season -> 2027 draft)
+  const upcomingDraftYear = currentSeason + 1
+
+  // Future drafts beyond the upcoming one are always valued as mid
+  if (year > upcomingDraftYear) {
     return 'mid'
   }
 
-  // For 2026: bottom half = early (low), top half = late (high)
+  // For upcoming draft: bottom half = early (better picks), top half = late (worse picks)
   const percentile = standingsRank / totalTeams
   if (percentile > 0.5) return 'early'
   return 'late'
