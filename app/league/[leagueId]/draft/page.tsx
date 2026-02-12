@@ -42,8 +42,13 @@ export default async function DraftBoard({
   const rosterMap = new Map(rostersWithUsers.map((r) => [r.roster_id, r]))
 
   // Determine upcoming draft years
+  // The NFL draft happens in late April, so before May we show the current year's draft
   const currentSeason = parseInt(league.season)
-  const upcomingSeasons = [currentSeason + 1, currentSeason + 2, currentSeason + 3]
+  const now = new Date()
+  const draftHasHappened = now.getMonth() >= 4 // May or later (0-indexed)
+  const upcomingSeasons = draftHasHappened
+    ? [currentSeason + 1, currentSeason + 2, currentSeason + 3]
+    : [currentSeason, currentSeason + 1, currentSeason + 2]
   const activeSeason = selectedSeason ? parseInt(selectedSeason) : upcomingSeasons[0]
 
   // Get draft rounds (typically 3-5 for dynasty)

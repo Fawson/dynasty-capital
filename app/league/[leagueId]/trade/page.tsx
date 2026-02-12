@@ -127,8 +127,13 @@ export default function TradePage() {
 
         // Build draft pick ownership for each team
         // Start with each team owning their own picks for future years
+        // NFL draft happens in late April, so before May we include the current year's draft
         const currentSeason = parseInt(getCurrentSeason())
-        const futureYears = [currentSeason + 1, currentSeason + 2, currentSeason + 3]
+        const now = new Date()
+        const draftHasHappened = now.getMonth() >= 4 // May or later (0-indexed)
+        const futureYears = draftHasHappened
+          ? [currentSeason + 1, currentSeason + 2, currentSeason + 3]
+          : [currentSeason, currentSeason + 1, currentSeason + 2]
         const rounds = [1, 2, 3, 4]
 
         // Initialize pick ownership: each team owns their own picks
