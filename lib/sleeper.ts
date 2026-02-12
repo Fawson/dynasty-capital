@@ -18,15 +18,17 @@ export async function getUser(username: string): Promise<SleeperUser | null> {
   return res.json()
 }
 
-// Get the current NFL season year
-// NFL season runs Sept-Feb, so Jan-Aug of year X is still the (X-1) season
+// Get the current NFL/fantasy season year
+// For dynasty leagues, Sleeper transitions to the new year after the season ends (late Jan/early Feb)
+// For simplicity, we use the current calendar year from February onwards
 export function getCurrentSeason(): string {
   const now = new Date()
   const year = now.getFullYear()
   const month = now.getMonth() // 0-indexed (0 = Jan)
 
-  // If we're in Jan-Aug, we're still in the previous year's season
-  if (month < 8) {
+  // January is still the previous year's season (playoffs/Super Bowl)
+  // February onwards uses the current year (offseason/new league year)
+  if (month === 0) {
     return (year - 1).toString()
   }
   return year.toString()
