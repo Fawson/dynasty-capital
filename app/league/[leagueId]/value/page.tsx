@@ -162,8 +162,8 @@ export default function ValueAnalyzerPage() {
               const originalOwnerName = rosterNameMap.get(originalOwnerId) || `Team ${originalOwnerId}`
               const isOwnPick = originalOwnerId === roster.roster_id
 
-              // Display labels: early=High (top of draft, more valuable), late=Low (bottom of draft, less valuable)
-              const posLabelMap: Record<string, string> = { early: 'High', mid: 'Mid', late: 'Low' }
+              // Display labels for pick position
+              const posLabelMap: Record<string, string> = { early: 'Early', mid: 'Mid', late: 'Late' }
               const posLabel = posLabelMap[position] || 'Mid'
               const ordinal = getOrdinal(round)
 
