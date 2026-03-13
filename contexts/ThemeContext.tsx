@@ -15,25 +15,29 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>('dark')
   const [mounted, setMounted] = useState(false)
 
+  // Single effect: load saved theme on mount, then persist + apply on changes
   useEffect(() => {
-    setMounted(true)
-    const savedTheme = localStorage.getItem('theme') as Theme
-    if (savedTheme) {
-      setTheme(savedTheme)
+    try {
+      const savedTheme = localStorage.getItem('theme') as Theme | null
+      if (savedTheme === 'light' || savedTheme === 'dark') {
+        setTheme(savedTheme)
+      }
+    } catch {
+      // localStorage unavailable (SSR, private browsing, storage full)
     }
+    setMounted(true)
   }, [])
 
   useEffect(() => {
-    if (mounted) {
+    if (!mounted) return
+    try {
       localStorage.setItem('theme', theme)
-      if (theme === 'light') {
-        document.documentElement.classList.add('light-mode')
-        document.documentElement.classList.remove('dark-mode')
-      } else {
-        document.documentElement.classList.add('dark-mode')
-        document.documentElement.classList.remove('light-mode')
-      }
+    } catch {
+      // Storage full or unavailable
     }
+    const root = document.documentElement
+    root.classList.toggle('light-mode', theme === 'light')
+    root.classList.toggle('dark-mode', theme === 'dark')
   }, [theme, mounted])
 
   const toggleTheme = () => {

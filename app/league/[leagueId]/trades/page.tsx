@@ -26,6 +26,7 @@ interface TradeNetworkProps {
 
 function TradeNetwork({ rosters, tradePartners, getTeamName }: TradeNetworkProps) {
   const [selectedTeam, setSelectedTeam] = useState<number | null>(null)
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; partnerId: number; count: number; color: string } | null>(null)
 
   // Get teams that have traded
   const tradingTeams = useMemo(() => {
@@ -144,7 +145,11 @@ function TradeNetwork({ rosters, tradePartners, getTeamName }: TradeNetworkProps
           {/* Chart - Centered */}
           <div className="flex justify-center">
             <div className="relative">
-              <svg viewBox="0 0 200 200" className="w-64 h-64 sm:w-72 sm:h-72 drop-shadow-lg">
+              <svg
+                viewBox="0 0 200 200"
+                className="w-64 h-64 sm:w-72 sm:h-72 drop-shadow-lg"
+                onMouseLeave={() => setTooltip(null)}
+              >
                 {/* Background circle for empty state or visual depth */}
                 <circle
                   cx="100"
@@ -160,14 +165,59 @@ function TradeNetwork({ rosters, tradePartners, getTeamName }: TradeNetworkProps
                       key={segment.partnerId}
                       d={segment.path}
                       fill={segment.color}
-                      className="hover:brightness-110 transition-all duration-200 cursor-pointer"
+                      className="hover:brightness-125 transition-all duration-200 cursor-pointer"
                       style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))' }}
-                    >
-                      <title>{getTeamName(segment.partnerId)}: {segment.count} trade{segment.count !== 1 ? 's' : ''}</title>
-                    </path>
+                      onMouseEnter={(e) => {
+                        const rect = e.currentTarget.ownerSVGElement?.getBoundingClientRect()
+                        if (rect) {
+                          setTooltip({
+                            x: e.clientX - rect.left,
+                            y: e.clientY - rect.top,
+                            partnerId: segment.partnerId,
+                            count: segment.count,
+                            color: segment.color
+                          })
+                        }
+                      }}
+                      onMouseMove={(e) => {
+                        const rect = e.currentTarget.ownerSVGElement?.getBoundingClientRect()
+                        if (rect && tooltip) {
+                          setTooltip(prev => prev ? {
+                            ...prev,
+                            x: e.clientX - rect.left,
+                            y: e.clientY - rect.top
+                          } : null)
+                        }
+                      }}
+                      onMouseLeave={() => setTooltip(null)}
+                    />
                   ))
                 ) : null}
               </svg>
+
+              {/* Custom Tooltip */}
+              {tooltip && (
+                <div
+                  className="absolute pointer-events-none z-10 px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg shadow-xl text-sm whitespace-nowrap transform -translate-x-1/2 -translate-y-full"
+                  style={{
+                    left: tooltip.x,
+                    top: tooltip.y - 10,
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="w-3 h-3 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: tooltip.color }}
+                    />
+                    <span className="text-white font-medium">{getTeamName(tooltip.partnerId)}</span>
+                  </div>
+                  <div className="text-amber-400 font-semibold mt-1">
+                    {tooltip.count} trade{tooltip.count !== 1 ? 's' : ''}
+                  </div>
+                  {/* Tooltip arrow */}
+                  <div className="absolute left-1/2 -translate-x-1/2 -bottom-1.5 w-3 h-3 bg-gray-900 border-r border-b border-gray-600 transform rotate-45" />
+                </div>
+              )}
               {/* Center text */}
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="text-center px-4">
@@ -234,6 +284,10 @@ interface RosterWithUser extends SleeperRoster {
   user?: LeagueUser
 }
 
+interface TradeWithSeason extends Transaction {
+  season: string
+}
+
 export default function TradeHistory() {
   const params = useParams()
   const searchParams = useSearchParams()
@@ -241,7 +295,9 @@ export default function TradeHistory() {
   const userId = searchParams.get('userId')
 
   const [league, setLeague] = useState<SleeperLeague | null>(null)
-  const [trades, setTrades] = useState<Transaction[]>([])
+  const [allTrades, setAllTrades] = useState<TradeWithSeason[]>([])
+  const [availableSeasons, setAvailableSeasons] = useState<string[]>([])
+  const [selectedSeason, setSelectedSeason] = useState<string>('current')
   const [rostersWithUsers, setRostersWithUsers] = useState<RosterWithUser[]>([])
   const [allPlayers, setAllPlayers] = useState<Record<string, SleeperPlayer>>({})
   const [tradeValues, setTradeValues] = useState<Record<string, TradeValues>>({})
@@ -274,21 +330,48 @@ export default function TradeHistory() {
         }))
         setRostersWithUsers(rostersWithUsersData)
 
-        // Fetch all transactions
-        const weeks = Array.from({ length: 18 }, (_, i) => i + 1)
-        const allTransactions = await Promise.all(
-          weeks.map(week =>
-            fetch(`https://api.sleeper.app/v1/league/${leagueId}/transactions/${week}`)
-              .then(res => res.json())
+        // Fetch league history to get all seasons
+        const leagueHistory: SleeperLeague[] = [leagueData]
+        let currentLeagueId = leagueData.previous_league_id
+        while (currentLeagueId) {
+          try {
+            const prevLeagueRes = await fetch(`https://api.sleeper.app/v1/league/${currentLeagueId}`)
+            const prevLeague: SleeperLeague = await prevLeagueRes.json()
+            leagueHistory.push(prevLeague)
+            currentLeagueId = prevLeague.previous_league_id
+          } catch {
+            break
+          }
+        }
+
+        // Fetch trades from all seasons
+        const allTradesWithSeason: TradeWithSeason[] = []
+        const seasons: string[] = []
+
+        for (const historicalLeague of leagueHistory) {
+          seasons.push(historicalLeague.season)
+          const weeks = Array.from({ length: 18 }, (_, i) => i + 1)
+          const seasonTransactions = await Promise.all(
+            weeks.map(week =>
+              fetch(`https://api.sleeper.app/v1/league/${historicalLeague.league_id}/transactions/${week}`)
+                .then(res => res.json())
+                .catch(() => [])
+            )
           )
-        )
 
-        const transactions: Transaction[] = allTransactions
-          .flat()
-          .filter((t: Transaction) => t.type === 'trade' && t.status === 'complete')
-          .sort((a: Transaction, b: Transaction) => b.created - a.created)
+          const trades = seasonTransactions
+            .flat()
+            .filter((t: Transaction) => t.type === 'trade' && t.status === 'complete')
+            .map((t: Transaction) => ({ ...t, season: historicalLeague.season }))
 
-        setTrades(transactions)
+          allTradesWithSeason.push(...trades)
+        }
+
+        // Sort all trades by date descending
+        allTradesWithSeason.sort((a, b) => b.created - a.created)
+
+        setAvailableSeasons(seasons)
+        setAllTrades(allTradesWithSeason)
       } catch (error) {
         console.error('Failed to fetch data:', error)
       } finally {
@@ -386,26 +469,16 @@ export default function TradeHistory() {
     })
   }
 
-  // Calculate football year boundaries
-  // Football year runs from March (offseason) through February (after Super Bowl)
-  const getFootballYearBounds = (season: string) => {
-    const year = parseInt(season)
-    // Start: March 1 of the season year (offseason begins after Super Bowl)
-    const start = new Date(year, 2, 1) // March 1
-    // End: Last day of February next year (after Super Bowl)
-    const end = new Date(year + 1, 2, 0, 23, 59, 59) // Feb 28/29
-    return { start, end }
-  }
-
-  const footballYear = league ? getFootballYearBounds(league.season) : null
-
-  // Filter trades to only those within the football year
-  const filteredTrades = footballYear
-    ? trades.filter(trade => {
-        const tradeDate = new Date(trade.created)
-        return tradeDate >= footballYear.start && tradeDate <= footballYear.end
-      })
-    : trades
+  // Filter trades based on selected season
+  const filteredTrades = useMemo(() => {
+    if (selectedSeason === 'all') {
+      return allTrades
+    }
+    if (selectedSeason === 'current') {
+      return allTrades.filter(t => t.season === league?.season)
+    }
+    return allTrades.filter(t => t.season === selectedSeason)
+  }, [allTrades, selectedSeason, league?.season])
 
   // Determine if a trade is during in-season (Sept - Feb) or offseason (Mar - Aug)
   const isInSeason = (timestamp: number) => {
@@ -520,7 +593,9 @@ export default function TradeHistory() {
             const playerName = getPlayerName(playerId)
             const pValues = playerValues[playerName]
             if (pValues) {
-              if (pValues.atTrade) totalAtTrade += pValues.atTrade
+              // If historical value is N/A, treat as static (use current for both)
+              const atTradeValue = pValues.atTrade !== null ? pValues.atTrade : pValues.current
+              totalAtTrade += atTradeValue
               totalNow += pValues.current
             }
             receives.push({
@@ -627,13 +702,45 @@ export default function TradeHistory() {
     )
   }
 
+  // Get subtitle based on selection
+  const getSubtitle = () => {
+    const count = filteredTrades.length
+    const tradeWord = count === 1 ? 'trade' : 'trades'
+    if (selectedSeason === 'all') {
+      return `${count} ${tradeWord} across all seasons`
+    }
+    const season = selectedSeason === 'current' ? league?.season : selectedSeason
+    return `${count} ${tradeWord} in ${season}`
+  }
+
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Trade History"
-        subtitle={`${filteredTrades.length} trade${filteredTrades.length !== 1 ? 's' : ''} this ${league?.season} football year`}
-        icon="trades"
-      />
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+        <PageHeader
+          title="Trade History"
+          subtitle={getSubtitle()}
+          icon="trades"
+        />
+
+        {/* Season Selector */}
+        <div className="flex-shrink-0">
+          <select
+            value={selectedSeason}
+            onChange={(e) => setSelectedSeason(e.target.value)}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+          >
+            <option value="current">{league?.season} Season</option>
+            <option value="all">All Seasons</option>
+            {availableSeasons.length > 1 && (
+              <optgroup label="By Season">
+                {availableSeasons.map(season => (
+                  <option key={season} value={season}>{season}</option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+        </div>
+      </div>
 
       {/* Trade Network Visualization */}
       {filteredTrades.length > 0 && (
@@ -777,8 +884,9 @@ export default function TradeHistory() {
                                     {sides.map((side) => {
                                       const valueChange = side.totalNow - side.totalAtTrade
                                       const tradeData = tradeValues[trade.transaction_id] || { values: {}, pickValues: {} }
+                                      // Consider having values if we have any player/pick data (N/A treated as static)
                                       const hasValues = side.receives.some(r =>
-                                        (r.type === 'player' && tradeData.values?.[r.value]?.atTrade !== undefined) ||
+                                        (r.type === 'player' && tradeData.values?.[r.value]) ||
                                         (r.type === 'pick' && r.pickLabel && tradeData.pickValues?.[r.pickLabel])
                                       )
 
@@ -841,7 +949,8 @@ export default function TradeHistory() {
                                                     )}
                                                   </>
                                                 ) : (
-                                                  <span className="text-gray-500">N/A → {pValues.current.toLocaleString()}</span>
+                                                  // N/A historical value - show as static (current value only)
+                                                  <span className="text-gray-400">{pValues.current.toLocaleString()}</span>
                                                 )}
                                               </div>
                                             )}
@@ -1002,7 +1111,7 @@ export default function TradeHistory() {
 
       {filteredTrades.length === 0 && (
         <div className="text-center py-12 text-gray-500">
-          No trades have been made this football year yet.
+          No trades have been made this season yet.
         </div>
       )}
 

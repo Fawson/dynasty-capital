@@ -128,6 +128,35 @@ export async function getTradedPicks(leagueId: string): Promise<TradedPick[]> {
   return res.json()
 }
 
+export interface SleeperDraft {
+  draft_id: string
+  league_id: string
+  season: string
+  status: 'pre_draft' | 'drafting' | 'complete'
+  type: 'linear' | 'snake' | 'auction'
+  draft_order: Record<string, number> | null // owner_id -> pick position (1-indexed)
+  slot_to_roster_id: Record<string, number> | null // pick position -> roster_id
+  settings: {
+    rounds: number
+    teams: number
+    [key: string]: unknown
+  }
+  metadata: {
+    name?: string
+    [key: string]: unknown
+  }
+  start_time: number | null
+  last_picked: number | null
+}
+
+export async function getLeagueDrafts(leagueId: string): Promise<SleeperDraft[]> {
+  const res = await fetch(`${BASE_URL}/league/${leagueId}/drafts`, {
+    cache: 'no-store', // Always fetch fresh draft data
+  })
+  if (!res.ok) return []
+  return res.json()
+}
+
 export interface Transaction {
   type: 'trade' | 'free_agent' | 'waiver'
   transaction_id: string
@@ -334,24 +363,23 @@ export async function getHistoricalStatsForUser(
       const championship = winnersBracket.find(m => m.r === maxRound)
       if (championship?.l === roster.roster_id) stats.runnerUps++
 
-      // Count weekly high scores
+      // Count weekly high scores — fetch all weeks in parallel (was sequential N+1)
       let weeklyHighs = 0
       const totalWeeks = league.settings?.playoff_week_start ? league.settings.playoff_week_start - 1 : 14
+      const weekNumbers = Array.from({ length: totalWeeks }, (_, i) => i + 1)
 
-      for (let week = 1; week <= totalWeeks; week++) {
-        try {
-          const matchups = await getMatchups(league.league_id, week)
-          if (matchups.length === 0) continue
+      const allWeekMatchups = await Promise.all(
+        weekNumbers.map(week => getMatchups(league.league_id, week).catch(() => []))
+      )
 
-          const topScore = Math.max(...matchups.map(m => m.points || 0))
-          const userMatchup = matchups.find(m => m.roster_id === roster.roster_id)
-          if (userMatchup && userMatchup.points === topScore && topScore > 0) {
-            weeklyHighs++
-          }
-        } catch {
-          // Skip weeks that fail
+      allWeekMatchups.forEach((matchups) => {
+        if (matchups.length === 0) return
+        const topScore = Math.max(...matchups.map(m => m.points || 0))
+        const userMatchup = matchups.find(m => m.roster_id === roster.roster_id)
+        if (userMatchup && userMatchup.points === topScore && topScore > 0) {
+          weeklyHighs++
         }
-      }
+      })
 
       stats.topWeeklyScores += weeklyHighs
 

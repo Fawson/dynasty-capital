@@ -134,6 +134,7 @@ export default function Navigation({ leagueId, leagueName }: NavigationProps) {
               <div key={section.title}>
                 <button
                   onClick={() => toggleSection(section.title)}
+                  aria-expanded={isExpanded}
                   className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                     hasActiveItem
                       ? 'text-amber-500'
@@ -204,6 +205,8 @@ export default function Navigation({ leagueId, leagueName }: NavigationProps) {
           </div>
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-expanded={mobileMenuOpen}
+            aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
             className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-700"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">

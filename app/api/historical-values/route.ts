@@ -7,6 +7,32 @@ let cachedData: { headers: string[]; rows: { date: string; values: Record<string
 let cacheTime: number = 0
 const CACHE_DURATION = 1000 * 60 * 60 // 1 hour
 
+// Proper CSV field parser that handles quoted fields with commas
+function parseCSVLine(line: string): string[] {
+  const fields: string[] = []
+  let current = ''
+  let inQuotes = false
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i]
+    if (char === '"') {
+      if (inQuotes && i + 1 < line.length && line[i + 1] === '"') {
+        current += '"'
+        i++ // Skip escaped quote
+      } else {
+        inQuotes = !inQuotes
+      }
+    } else if (char === ',' && !inQuotes) {
+      fields.push(current.trim())
+      current = ''
+    } else {
+      current += char
+    }
+  }
+  fields.push(current.trim())
+  return fields
+}
+
 async function fetchHistoricalData() {
   const now = Date.now()
 
@@ -15,12 +41,15 @@ async function fetchHistoricalData() {
   }
 
   const response = await fetch(HISTORICAL_SHEET_URL)
+  if (!response.ok) {
+    throw new Error(`Google Sheets returned ${response.status}`)
+  }
   const csv = await response.text()
 
   const lines = csv.split('\n')
-  const headers = lines[0].split(',').map(h => h.trim())
+  const headers = parseCSVLine(lines[0])
 
-  // Find where player columns start (after draft picks, around column 37)
+  // Find where player columns start (after draft picks)
   const playerStartIndex = headers.findIndex(h => !h.includes('1st') && !h.includes('2nd') && !h.includes('3rd') && !h.includes('4th') && h !== 'Date')
 
   const rows: { date: string; values: Record<string, number> }[] = []
@@ -29,8 +58,7 @@ async function fetchHistoricalData() {
     const line = lines[i]
     if (!line.trim()) continue
 
-    // Parse CSV properly handling commas in quotes
-    const values = line.split(',')
+    const values = parseCSVLine(line)
     const date = values[0]
 
     if (!date || !date.match(/^\d{4}-\d{2}-\d{2}$/)) continue

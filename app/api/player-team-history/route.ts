@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-// Cache for team history to avoid repeated API calls
+// Bounded cache for team history to avoid unbounded memory growth
+const MAX_CACHE_SIZE = 200
 const teamHistoryCache = new Map<string, { data: Record<string, string>; timestamp: number }>()
 const CACHE_DURATION = 1000 * 60 * 60 * 24 // 24 hours
+
+function setCacheEntry(key: string, data: Record<string, string>) {
+  // Evict oldest entries if cache is full
+  if (teamHistoryCache.size >= MAX_CACHE_SIZE) {
+    const oldestKey = teamHistoryCache.keys().next().value
+    if (oldestKey) teamHistoryCache.delete(oldestKey)
+  }
+  teamHistoryCache.set(key, { data, timestamp: Date.now() })
+}
 
 export async function GET(request: NextRequest) {
   const espnId = request.nextUrl.searchParams.get('espnId')
@@ -22,11 +32,10 @@ export async function GET(request: NextRequest) {
     const teamHistory: Record<string, string> = {}
 
     // Fetch last 6 seasons to match stats data
-    // NFL season runs Sept-Feb, so in Jan-Aug we use previous year as current season
     const now = new Date()
-    const currentMonth = now.getMonth() // 0-indexed (0 = Jan)
+    const currentMonth = now.getMonth()
     const calendarYear = now.getFullYear()
-    const currentNFLSeason = currentMonth < 8 ? calendarYear - 1 : calendarYear // Before September = previous season
+    const currentNFLSeason = currentMonth < 8 ? calendarYear - 1 : calendarYear
     const seasons = Array.from({ length: 6 }, (_, i) => currentNFLSeason - i)
 
     // Process all seasons in parallel for speed
@@ -34,31 +43,25 @@ export async function GET(request: NextRequest) {
       const seasonResults: { season: number; week: number; team: string }[] = []
 
       try {
-        // Fetch ESPN gamelog for this season
         const gamelogRes = await fetch(
           `https://site.api.espn.com/apis/common/v3/sports/football/nfl/athletes/${espnId}/gamelog?season=${season}`,
-          { next: { revalidate: 86400 } } // Cache for 24 hours
+          { next: { revalidate: 86400 } }
         )
 
         if (!gamelogRes.ok) return seasonResults
 
         const gamelog = await gamelogRes.json()
 
-        // ESPN gamelog has multiple seasonTypes (Postseason, Regular Season)
-        // We want the Regular Season which typically has splitType "2"
-        // Collect events from all season types but prefer regular season
         let events: { eventId: string }[] = []
         let displayTeam: string | null = null
 
         const seasonTypes = gamelog?.seasonTypes || []
         for (const seasonType of seasonTypes) {
-          // Check if this is regular season (has displayTeam or splitType "2")
           if (seasonType.displayTeam) {
             displayTeam = seasonType.displayTeam
           }
           const categories = seasonType?.categories || []
           for (const category of categories) {
-            // Prefer regular season (splitType "2") over postseason (splitType "3")
             if (category.splitType === "2" || category.displayName?.includes("Regular")) {
               events = category.events || []
               break
@@ -67,12 +70,11 @@ export async function GET(request: NextRequest) {
           if (events.length > 0) break
         }
 
-        // If no regular season found, try first available
         if (events.length === 0 && seasonTypes.length > 0) {
           events = seasonTypes[0]?.categories?.[0]?.events || []
         }
 
-        // Fetch all game details in parallel (no batching for speed)
+        // Fetch all game details in parallel
         const gamePromises = events.map(async (event: { eventId: string }) => {
           try {
             const gameRes = await fetch(
@@ -89,13 +91,11 @@ export async function GET(request: NextRequest) {
 
             if (!week || !homeTeam || !awayTeam) return null
 
-            // Check which team the player was on by looking at the roster/statistics
             const homeStats = game?.boxscore?.players?.[0]?.statistics || []
             const awayStats = game?.boxscore?.players?.[1]?.statistics || []
 
             let playerTeam: string | null = null
 
-            // Check if player is in home team stats
             outerHome: for (const stat of homeStats) {
               const athletes = stat?.athletes || []
               for (const athlete of athletes) {
@@ -106,7 +106,6 @@ export async function GET(request: NextRequest) {
               }
             }
 
-            // If not found in home, check away
             if (!playerTeam) {
               outerAway: for (const stat of awayStats) {
                 const athletes = stat?.athletes || []
@@ -119,7 +118,6 @@ export async function GET(request: NextRequest) {
               }
             }
 
-            // Use displayTeam from gamelog as fallback
             if (!playerTeam && displayTeam) {
               playerTeam = displayTeam
             }
@@ -148,15 +146,14 @@ export async function GET(request: NextRequest) {
 
     const allSeasonResults = await Promise.all(seasonPromises)
 
-    // Combine all results into teamHistory
     allSeasonResults.flat().forEach(result => {
       if (result) {
         teamHistory[`${result.season}-${result.week}`] = result.team
       }
     })
 
-    // Cache the result
-    teamHistoryCache.set(espnId, { data: teamHistory, timestamp: Date.now() })
+    // Cache with bounded eviction
+    setCacheEntry(espnId, teamHistory)
 
     return NextResponse.json({ teamHistory })
   } catch (error) {

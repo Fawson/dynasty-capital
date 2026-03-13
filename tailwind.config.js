@@ -7,7 +7,7 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Sports Modern palette
+        // Unified design tokens
         surface: {
           DEFAULT: '#1F2937', // gray-800 - cards/panels
           dark: '#111827',    // gray-900 - background
@@ -17,12 +17,12 @@ module.exports = {
           DEFAULT: '#F59E0B', // amber-500 - primary accent
           hover: '#D97706',   // amber-600
         },
-        // Keep legacy sleeper colors for gradual migration
+        // Legacy aliases (mapped to new tokens for backward compatibility)
         sleeper: {
-          dark: '#1a1a2e',
-          primary: '#1F2937',  // Updated to gray-800
-          accent: '#374151',   // Updated to gray-700
-          highlight: '#F59E0B', // Updated to amber-500
+          dark: '#111827',     // → surface-dark
+          primary: '#1F2937',  // → surface
+          accent: '#374151',   // → border
+          highlight: '#F59E0B', // → accent
         },
       },
     },

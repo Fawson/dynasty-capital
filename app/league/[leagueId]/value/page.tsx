@@ -54,41 +54,23 @@ export default function ValueAnalyzerPage() {
         const userMap = new Map(users.map((u) => [u.user_id, u]))
         const totalTeams = rosters.length
 
-        // Check if current league has meaningful standings
-        const totalWins = rosters.reduce((sum, r) => sum + (r.settings.wins || 0), 0)
+        // Fetch drafts to get the actual draft order
+        const draftsRes = await fetch(`https://api.sleeper.app/v1/league/${leagueId}/drafts`)
+        const drafts = await draftsRes.json()
+        const currentDraft = drafts.find((d: { season: string }) => d.season === league.season)
+        const draftOrder: Record<string, number> = currentDraft?.draft_order || {}
 
-        // If no games played yet, try to get previous season's standings
-        let standingsRosters = rosters
-        if (totalWins === 0 && league.previous_league_id) {
-          try {
-            const prevRostersRes = await fetch(`https://api.sleeper.app/v1/league/${league.previous_league_id}/rosters`)
-            const prevRosters: SleeperRoster[] = await prevRostersRes.json()
-            // Only use if previous league has data
-            const prevTotalWins = prevRosters.reduce((sum, r) => sum + (r.settings.wins || 0), 0)
-            if (prevTotalWins > 0) {
-              standingsRosters = prevRosters
-            }
-          } catch {
-            // Fall back to current rosters
-          }
-        }
+        // Create a map from owner_id to pick position (1-indexed)
+        const ownerToPickPosition = new Map<string, number>(
+          Object.entries(draftOrder).map(([ownerId, position]) => [ownerId, position as number])
+        )
 
-        // Sort rosters by standings to determine pick positions
-        // Use standingsRosters (may be from previous season if current has no data)
-        const sortedRosters = [...standingsRosters].sort((a, b) => {
-          if (b.settings.wins !== a.settings.wins) {
-            return b.settings.wins - a.settings.wins
-          }
-          return (
-            (b.settings.fpts || 0) + (b.settings.fpts_decimal || 0) / 100 -
-            ((a.settings.fpts || 0) + (a.settings.fpts_decimal || 0) / 100)
-          )
-        })
-
-        // Create standings map (roster_id -> rank, where 1 = best, 10 = worst)
-        const standingsMap = new Map<number, number>()
-        sortedRosters.forEach((roster, index) => {
-          standingsMap.set(roster.roster_id, index + 1)
+        // Create a map of roster_id to draft position (1 = first pick, totalTeams = last pick)
+        // This is used to determine pick labels (Early/Mid/Late)
+        const draftPositionMap = new Map<number, number>()
+        rosters.forEach((roster) => {
+          const position = ownerToPickPosition.get(roster.owner_id) ?? Math.ceil(totalTeams / 2)
+          draftPositionMap.set(roster.roster_id, position)
         })
 
         // Create roster name map
@@ -182,8 +164,8 @@ export default function ValueAnalyzerPage() {
               const round = parseInt(roundStr)
               const originalOwnerId = parseInt(originalOwnerStr)
 
-              const standingsRank = standingsMap.get(originalOwnerId) || Math.ceil(totalTeams / 2)
-              const position = getPickPosition(standingsRank, totalTeams, year)
+              const draftPosition = draftPositionMap.get(originalOwnerId) || Math.ceil(totalTeams / 2)
+              const position = getPickPosition(draftPosition, totalTeams, year)
               const value = getDraftPickValue(year, round, position)
 
               const originalOwnerName = rosterNameMap.get(originalOwnerId) || `Team ${originalOwnerId}`

@@ -3,6 +3,7 @@ import {
   getLeagueRosters,
   getLeagueUsers,
   getTradedPicks,
+  getLeagueDrafts,
 } from '@/lib/sleeper'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
@@ -20,11 +21,12 @@ export default async function DraftBoard({
   const { leagueId } = await params
   const { userId, season: selectedSeason } = await searchParams
 
-  const [league, rosters, users, tradedPicks] = await Promise.all([
+  const [league, rosters, users, tradedPicks, drafts] = await Promise.all([
     getLeague(leagueId),
     getLeagueRosters(leagueId),
     getLeagueUsers(leagueId),
     getTradedPicks(leagueId),
+    getLeagueDrafts(leagueId),
   ])
 
   if (!league) {
@@ -54,33 +56,23 @@ export default async function DraftBoard({
   // Get draft rounds (typically 3-5 for dynasty)
   const draftRounds = league.settings?.draft_rounds || 4
 
-  // Check if current league has meaningful standings
-  const totalWins = rosters.reduce((sum, r) => sum + (r.settings.wins || 0), 0)
+  // Get the draft for the current season to determine pick order
+  // Draft order is explicitly set in Sleeper, not calculated from standings
+  const currentDraft = drafts.find(d => d.season === league.season)
+  const draftOrder = currentDraft?.draft_order || {}
 
-  // If no games played yet, try to get previous season's standings for draft order
-  let standingsRosters = rostersWithUsers
-  if (totalWins === 0 && league.previous_league_id) {
-    const prevRosters = await getLeagueRosters(league.previous_league_id)
-    const prevTotalWins = prevRosters.reduce((sum, r) => sum + (r.settings.wins || 0), 0)
-    if (prevTotalWins > 0) {
-      // Map previous rosters to include user info from current league
-      standingsRosters = prevRosters.map((roster) => ({
-        ...roster,
-        user: userMap.get(roster.owner_id),
-      }))
-    }
-  }
+  // Create a map from owner_id to pick position (1-indexed)
+  // Then map that to roster_id for sorting
+  const ownerToPickPosition = new Map<string, number>(
+    Object.entries(draftOrder).map(([ownerId, position]) => [ownerId, position])
+  )
 
-  // Sort rosters by standings (worst record picks first - typical draft order)
-  // Uses previous season standings if current season hasn't started
-  const sortedRosters = [...standingsRosters].sort((a, b) => {
-    if (a.settings.wins !== b.settings.wins) {
-      return a.settings.wins - b.settings.wins // Worse record = earlier pick
-    }
-    return (
-      ((a.settings.fpts || 0) + (a.settings.fpts_decimal || 0) / 100) -
-      ((b.settings.fpts || 0) + (b.settings.fpts_decimal || 0) / 100)
-    )
+  // Sort rosters by their draft order position
+  // If a team isn't in the draft order, put them at the end
+  const sortedRosters = [...rostersWithUsers].sort((a, b) => {
+    const posA = ownerToPickPosition.get(a.owner_id) ?? 999
+    const posB = ownerToPickPosition.get(b.owner_id) ?? 999
+    return posA - posB
   })
 
   // Get team name helper

@@ -2,6 +2,8 @@
 // Data sourced from KeepTradeCut dynasty values
 // Last updated: 01/13/26
 
+import { POSITION_DEFAULTS } from './constants'
+
 // Trade values based on dynasty rankings (higher = more valuable)
 // Scale: 1-10000 where 10000 is the most valuable player
 
@@ -107,7 +109,7 @@ export function getDraftPickValue(
 // For upcoming draft (next year): use early or late based on standings
 // For future drafts beyond that: always use mid
 export function getPickPosition(
-  standingsRank: number,
+  draftPosition: number,
   totalTeams: number,
   year: number,
   currentSeasonYear?: number
@@ -127,10 +129,13 @@ export function getPickPosition(
     return 'mid'
   }
 
-  // For upcoming draft: bottom half = early (better picks), top half = late (worse picks)
-  const percentile = standingsRank / totalTeams
-  if (percentile > 0.5) return 'early'
-  return 'late'
+  // Draft position 1 = first pick (early), higher position = later pick
+  // Early = top third (picks 1-3 in a 10-team league)
+  // Late = bottom third (picks 8-10 in a 10-team league)
+  const percentile = draftPosition / totalTeams
+  if (percentile <= 0.33) return 'early'
+  if (percentile >= 0.67) return 'late'
+  return 'mid'
 }
 
 // Extended draft pick interface with original owner info
@@ -648,51 +653,31 @@ function stripSuffix(name: string): string {
     .trim()
 }
 
+// Pre-built lookup Maps for O(1) player value access
+// Built once at module load instead of scanning 636-item array on every call
+const _exactMap = new Map<string, PlayerValue>()
+const _strippedMap = new Map<string, PlayerValue>()
+
+for (const pv of PLAYER_VALUES) {
+  const norm = normalizeName(pv.name)
+  _exactMap.set(norm, pv)
+  _strippedMap.set(stripSuffix(norm), pv)
+}
+
+// Internal O(1) lookup helper
+function _lookupPlayer(playerName: string): PlayerValue | undefined {
+  const normalized = normalizeName(playerName)
+  return _exactMap.get(normalized) ?? _strippedMap.get(stripSuffix(normalized))
+}
+
 // Get player value by name
 export function getPlayerValue(playerName: string): number {
-  const normalized = normalizeName(playerName)
-
-  // Try exact match first
-  let match = PLAYER_VALUES.find(
-    (p) => normalizeName(p.name) === normalized
-  )
-
-  if (match) {
-    return match.value
-  }
-
-  // Try matching without suffixes (e.g., "Kenneth Walker" matches "Kenneth Walker III")
-  const strippedInput = stripSuffix(normalized)
-  match = PLAYER_VALUES.find(
-    (p) => stripSuffix(normalizeName(p.name)) === strippedInput
-  )
-
-  if (match) {
-    return match.value
-  }
-
-  // For unranked players, return a default low value
-  return 500
+  return _lookupPlayer(playerName)?.value ?? 500
 }
 
 // Get player tier
 export function getPlayerTier(playerName: string): number | null {
-  const normalized = normalizeName(playerName)
-
-  // Try exact match first
-  let match = PLAYER_VALUES.find(
-    (p) => normalizeName(p.name) === normalized
-  )
-
-  if (!match) {
-    // Try matching without suffixes
-    const strippedInput = stripSuffix(normalized)
-    match = PLAYER_VALUES.find(
-      (p) => stripSuffix(normalizeName(p.name)) === strippedInput
-    )
-  }
-
-  return match?.tier || null
+  return _lookupPlayer(playerName)?.tier ?? null
 }
 
 // Get all player values (for display purposes)
@@ -724,16 +709,7 @@ export function getSleeperPlayerValue(
   }
 
   // Return position-based default for unranked players
-  const positionDefaults: Record<string, number> = {
-    QB: 500,
-    RB: 500,
-    WR: 500,
-    TE: 500,
-    K: 100,
-    DEF: 100,
-  }
-
-  return positionDefaults[position] || 100
+  return POSITION_DEFAULTS[position] || 100
 }
 
 // Calculate trade fairness

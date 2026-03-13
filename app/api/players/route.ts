@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
+import { SleeperPlayer } from '@/lib/types'
 
 // Cache the player data in memory on the server
-let cachedPlayers: Record<string, unknown> | null = null
+let cachedPlayers: Record<string, SleeperPlayer> | null = null
 let cacheTimestamp: number = 0
 const CACHE_DURATION = 24 * 60 * 60 * 1000 // 24 hours in milliseconds
 
@@ -26,7 +27,7 @@ export async function GET() {
     })
 
     if (!response.ok) {
-      throw new Error('Failed to fetch players from Sleeper')
+      throw new Error(`Sleeper API returned ${response.status}`)
     }
 
     cachedPlayers = await response.json()
@@ -39,6 +40,8 @@ export async function GET() {
       },
     })
   } catch (error) {
+    console.error('Failed to fetch players:', error)
+
     // If fetch fails but we have stale cache, return it
     if (cachedPlayers) {
       return NextResponse.json(cachedPlayers, {
@@ -68,7 +71,7 @@ export async function POST(request: Request) {
     const response = await fetch('https://api.sleeper.app/v1/players/nfl')
 
     if (!response.ok) {
-      throw new Error('Failed to fetch players from Sleeper')
+      throw new Error(`Sleeper API returned ${response.status}`)
     }
 
     cachedPlayers = await response.json()
@@ -81,6 +84,7 @@ export async function POST(request: Request) {
       timestamp: new Date().toISOString(),
     })
   } catch (error) {
+    console.error('Failed to refresh player cache:', error)
     return NextResponse.json(
       { error: 'Failed to refresh player cache' },
       { status: 500 }

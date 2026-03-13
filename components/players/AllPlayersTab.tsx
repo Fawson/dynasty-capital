@@ -1,9 +1,11 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import Link from 'next/link'
+import { FixedSizeList as List } from 'react-window'
 import { SleeperPlayer, SleeperRoster, LeagueUser } from '@/lib/types'
 import { getSleeperPlayerValue, getAllPlayerValues } from '@/lib/fantasypros'
+import { POSITION_BG_CLASSES, getValueColorClass, ALL_FILTER_POSITIONS } from '@/lib/constants'
 
 interface AllPlayersTabProps {
   leagueId: string
@@ -74,7 +76,6 @@ export default function AllPlayersTab({
     // Then add free agents from our value database
     const valuedPlayers = getAllPlayerValues()
     valuedPlayers.forEach((valuedPlayer) => {
-      // Find the Sleeper player by name AND position to avoid name collisions (e.g., multiple "Josh Allen"s)
       const sleeperPlayer = Object.values(allPlayers).find(
         (p) => (p.full_name?.toLowerCase() === valuedPlayer.name.toLowerCase() ||
                `${p.first_name} ${p.last_name}`.toLowerCase() === valuedPlayer.name.toLowerCase()) &&
@@ -94,8 +95,6 @@ export default function AllPlayersTab({
     return allPlayersList
   }, [allPlayers, rosters, users])
 
-  const positions = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DEF']
-
   // Calculate position ranks
   const positionRanks = useMemo(() => {
     const ranks = new Map<string, number>()
@@ -114,46 +113,87 @@ export default function AllPlayersTab({
     return ranks
   }, [players])
 
-  const filteredPlayers = players
-    .filter((p) => filter === 'ALL' || p.position === filter)
-    .filter((p) => !freeAgentsOnly || p.ownerName === 'Free Agent')
-    .filter((p) => !rookiesOnly || p.years_exp === 1)
-    .filter((p) => {
-      if (!searchQuery.trim()) return true
-      const query = searchQuery.toLowerCase()
-      return (
-        p.full_name?.toLowerCase().includes(query) ||
-        p.first_name?.toLowerCase().includes(query) ||
-        p.last_name?.toLowerCase().includes(query)
-      )
-    })
-    .sort((a, b) => {
-      if (sortBy === 'value') return b.value - a.value
-      return a.full_name.localeCompare(b.full_name)
-    })
+  // Memoize filtered + sorted players
+  const filteredPlayers = useMemo(() =>
+    players
+      .filter((p) => filter === 'ALL' || p.position === filter)
+      .filter((p) => !freeAgentsOnly || p.ownerName === 'Free Agent')
+      .filter((p) => !rookiesOnly || p.years_exp === 1)
+      .filter((p) => {
+        if (!searchQuery.trim()) return true
+        const query = searchQuery.toLowerCase()
+        return (
+          p.full_name?.toLowerCase().includes(query) ||
+          p.first_name?.toLowerCase().includes(query) ||
+          p.last_name?.toLowerCase().includes(query)
+        )
+      })
+      .sort((a, b) => {
+        if (sortBy === 'value') return b.value - a.value
+        return a.full_name.localeCompare(b.full_name)
+      }),
+    [players, filter, freeAgentsOnly, rookiesOnly, searchQuery, sortBy]
+  )
 
-  const getPositionColor = (pos: string) => {
-    switch (pos) {
-      case 'QB': return 'bg-red-600'
-      case 'RB': return 'bg-green-600'
-      case 'WR': return 'bg-blue-600'
-      case 'TE': return 'bg-orange-600'
-      case 'K': return 'bg-purple-600'
-      case 'DEF': return 'bg-yellow-600'
-      default: return 'bg-gray-600'
-    }
-  }
-
-  const getValueColor = (value: number) => {
-    if (value >= 9000) return 'text-yellow-400'
-    if (value >= 8000) return 'text-green-400'
-    if (value >= 7000) return 'text-blue-400'
-    if (value >= 5000) return 'text-gray-300'
-    return 'text-gray-500'
-  }
+  const getPositionBgClass = useCallback((pos: string) => {
+    return POSITION_BG_CLASSES[pos] || 'bg-gray-600'
+  }, [])
 
   const rosteredCount = players.filter(p => p.ownerName !== 'Free Agent').length
   const freeAgentCount = players.filter(p => p.ownerName === 'Free Agent').length
+
+  // Virtual row renderer for react-window
+  const ROW_HEIGHT = 52
+  const VISIBLE_ROWS = Math.min(filteredPlayers.length, 200)
+  const listHeight = Math.min(VISIBLE_ROWS * ROW_HEIGHT, 600)
+
+  const Row = useCallback(({ index, style }: { index: number; style: React.CSSProperties }) => {
+    const player = filteredPlayers[index]
+    if (!player) return null
+    const isUserPlayer = userRosterId !== null && player.rosterId === userRosterId
+
+    return (
+      <div
+        style={style}
+        className={`flex items-center hover:bg-gray-700/50 transition-colors cursor-pointer border-b border-gray-700/50 ${
+          isUserPlayer ? 'bg-amber-500/10 border-l-4 border-l-amber-500' : ''
+        }`}
+        onClick={() => onSelectPlayer?.(player.player_id)}
+        role="row"
+      >
+        <div className="w-14 px-3 text-gray-500 text-sm shrink-0">{index + 1}</div>
+        <div className="w-16 px-2 text-gray-400 text-sm shrink-0">{player.position}{positionRanks.get(player.player_id)}</div>
+        <div className="flex-1 px-2 min-w-0">
+          <span className="font-medium truncate">{player.full_name}</span>
+          {player.injury_status && (
+            <span className="text-xs text-red-400 ml-2">{player.injury_status}</span>
+          )}
+        </div>
+        <div className="w-14 px-2 shrink-0">
+          <span className={`px-2 py-1 rounded text-xs font-bold ${getPositionBgClass(player.position)}`}>
+            {player.position}
+          </span>
+        </div>
+        <div className="w-12 px-2 text-gray-400 text-sm hidden sm:block shrink-0">{player.team || 'FA'}</div>
+        <div className="w-28 px-2 truncate shrink-0">
+          {player.ownerName === 'Free Agent' ? (
+            <span className="text-amber-500 text-sm">Free Agent</span>
+          ) : (
+            <Link
+              href={`/league/${leagueId}/team/${player.rosterId}`}
+              className="text-gray-400 hover:text-amber-500 transition-colors text-sm"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {player.ownerName}
+            </Link>
+          )}
+        </div>
+        <div className={`w-20 px-3 text-right font-semibold text-sm shrink-0 ${getValueColorClass(player.value)}`}>
+          {player.value.toLocaleString()}
+        </div>
+      </div>
+    )
+  }, [filteredPlayers, userRosterId, positionRanks, getPositionBgClass, leagueId, onSelectPlayer])
 
   return (
     <div className="space-y-6">
@@ -165,15 +205,18 @@ export default function AllPlayersTab({
 
       {/* Search */}
       <div className="relative mb-4">
+        <label htmlFor="player-search" className="sr-only">Search players</label>
         <svg
           className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
+          aria-hidden="true"
         >
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
         </svg>
         <input
+          id="player-search"
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
@@ -184,6 +227,7 @@ export default function AllPlayersTab({
           <button
             onClick={() => setSearchQuery('')}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+            aria-label="Clear search"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -194,16 +238,17 @@ export default function AllPlayersTab({
 
       {/* Filters */}
       <div className="space-y-3">
-        <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
-          {positions.map((pos) => (
+        <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0" role="group" aria-label="Position filters">
+          {ALL_FILTER_POSITIONS.map((pos) => (
             <button
               key={pos}
               onClick={() => setFilter(pos)}
               className={`px-3 py-1.5 rounded text-sm font-medium transition-colors whitespace-nowrap ${
                 filter === pos
-                  ? 'bg-sleeper-highlight text-white'
-                  : 'bg-sleeper-accent text-gray-400 hover:text-white'
+                  ? 'bg-amber-500 text-white'
+                  : 'bg-gray-700 text-gray-400 hover:text-white'
               }`}
+              aria-pressed={filter === pos}
             >
               {pos}
             </button>
@@ -215,9 +260,10 @@ export default function AllPlayersTab({
             onClick={() => setSortBy('value')}
             className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
               sortBy === 'value'
-                ? 'bg-sleeper-accent text-white'
+                ? 'bg-gray-700 text-white'
                 : 'text-gray-400 hover:text-white'
             }`}
+            aria-pressed={sortBy === 'value'}
           >
             Sort by Value
           </button>
@@ -225,9 +271,10 @@ export default function AllPlayersTab({
             onClick={() => setSortBy('name')}
             className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
               sortBy === 'name'
-                ? 'bg-sleeper-accent text-white'
+                ? 'bg-gray-700 text-white'
                 : 'text-gray-400 hover:text-white'
             }`}
+            aria-pressed={sortBy === 'name'}
           >
             Sort by Name
           </button>
@@ -238,6 +285,7 @@ export default function AllPlayersTab({
                 ? 'bg-amber-500 text-white'
                 : 'text-gray-400 hover:text-white'
             }`}
+            aria-pressed={freeAgentsOnly}
           >
             Free Agents Only
           </button>
@@ -248,79 +296,50 @@ export default function AllPlayersTab({
                 ? 'bg-amber-500 text-white'
                 : 'text-gray-400 hover:text-white'
             }`}
+            aria-pressed={rookiesOnly}
           >
             Rookies Only
           </button>
         </div>
       </div>
 
-      {/* Players Table */}
-      <div className="bg-sleeper-primary rounded-lg border border-sleeper-accent overflow-x-auto">
-        <table className="w-full min-w-[600px]">
-          <thead className="bg-sleeper-accent">
-            <tr>
-              <th className="px-3 sm:px-4 py-3 text-left text-sm font-semibold text-gray-300">Rank</th>
-              <th className="px-3 sm:px-4 py-3 text-left text-sm font-semibold text-gray-300">Pos. Rank</th>
-              <th className="px-3 sm:px-4 py-3 text-left text-sm font-semibold text-gray-300">Player</th>
-              <th className="px-3 sm:px-4 py-3 text-left text-sm font-semibold text-gray-300">Pos</th>
-              <th className="px-3 sm:px-4 py-3 text-left text-sm font-semibold text-gray-300 hidden sm:table-cell">Team</th>
-              <th className="px-3 sm:px-4 py-3 text-left text-sm font-semibold text-gray-300">Owner</th>
-              <th className="px-3 sm:px-4 py-3 text-right text-sm font-semibold text-gray-300">Value</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-sleeper-accent">
-            {filteredPlayers.slice(0, 100).map((player, index) => {
-              const isUserPlayer = userRosterId !== null && player.rosterId === userRosterId
-              return (
-              <tr
-                key={player.player_id}
-                className={`hover:bg-sleeper-accent/50 transition-colors cursor-pointer ${
-                  isUserPlayer ? 'bg-amber-500/10 border-l-4 border-l-amber-500' : ''
-                }`}
-                onClick={() => onSelectPlayer?.(player.player_id)}
-              >
-                <td className="px-3 sm:px-4 py-3 text-gray-500">{index + 1}</td>
-                <td className="px-3 sm:px-4 py-3 text-gray-400">{player.position}{positionRanks.get(player.player_id)}</td>
-                <td className="px-3 sm:px-4 py-3">
-                  <span className="font-medium hover:text-sleeper-highlight transition-colors">
-                    {player.full_name}
-                  </span>
-                  {player.injury_status && (
-                    <span className="text-xs text-red-400 ml-2">{player.injury_status}</span>
-                  )}
-                </td>
-                <td className="px-3 sm:px-4 py-3">
-                  <span className={`px-2 py-1 rounded text-xs font-bold ${getPositionColor(player.position)}`}>
-                    {player.position}
-                  </span>
-                </td>
-                <td className="px-3 sm:px-4 py-3 text-gray-400 hidden sm:table-cell">{player.team || 'FA'}</td>
-                <td className="px-3 sm:px-4 py-3">
-                  {player.ownerName === 'Free Agent' ? (
-                    <span className="text-amber-500 text-sm sm:text-base">Free Agent</span>
-                  ) : (
-                    <Link
-                      href={`/league/${leagueId}/team/${player.rosterId}`}
-                      className="text-gray-400 hover:text-sleeper-highlight transition-colors text-sm sm:text-base"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {player.ownerName}
-                    </Link>
-                  )}
-                </td>
-                <td className={`px-3 sm:px-4 py-3 text-right font-semibold ${getValueColor(player.value)}`}>
-                  {player.value.toLocaleString()}
-                </td>
-              </tr>
-            )})}
+      {/* Virtualized Players List */}
+      <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center bg-gray-700 text-sm font-semibold text-gray-300" role="row">
+          <div className="w-14 px-3 py-3 shrink-0" role="columnheader">Rank</div>
+          <div className="w-16 px-2 py-3 shrink-0" role="columnheader">Pos.</div>
+          <div className="flex-1 px-2 py-3" role="columnheader">Player</div>
+          <div className="w-14 px-2 py-3 shrink-0" role="columnheader">Pos</div>
+          <div className="w-12 px-2 py-3 hidden sm:block shrink-0" role="columnheader">Team</div>
+          <div className="w-28 px-2 py-3 shrink-0" role="columnheader">Owner</div>
+          <div className="w-20 px-3 py-3 text-right shrink-0" role="columnheader">Value</div>
+        </div>
 
-          </tbody>
-        </table>
+        {/* Virtualized rows */}
+        {filteredPlayers.length > 0 ? (
+          <List
+            height={listHeight}
+            itemCount={filteredPlayers.length}
+            itemSize={ROW_HEIGHT}
+            width="100%"
+          >
+            {Row}
+          </List>
+        ) : (
+          <div className="py-12 text-center text-gray-500">
+            <svg className="w-12 h-12 mx-auto mb-3 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <p className="text-lg">No players found</p>
+            <p className="text-sm mt-1">Try adjusting your search or filters</p>
+          </div>
+        )}
       </div>
 
-      {filteredPlayers.length > 100 && (
-        <p className="text-gray-500 text-center">
-          Showing top 100 of {filteredPlayers.length} players
+      {filteredPlayers.length > 200 && (
+        <p className="text-gray-500 text-center text-sm">
+          Showing {Math.min(filteredPlayers.length, 200)} of {filteredPlayers.length} players. Use search or filters to narrow results.
         </p>
       )}
     </div>
