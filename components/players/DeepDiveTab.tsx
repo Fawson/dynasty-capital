@@ -7,7 +7,6 @@ import { getSleeperPlayerValue } from '@/lib/fantasypros'
 import { Skeleton, SkeletonCard, SkeletonChart } from '@/components/Skeleton'
 // getCurrentSeason no longer needed — server-side route handles season logic
 import {
-  LineChart as RechartsLineChart,
   Line,
   XAxis,
   YAxis,
@@ -16,8 +15,7 @@ import {
   ResponsiveContainer,
   Area,
   AreaChart,
-  Brush,
-  ReferenceLine,
+  ReferenceArea,
 } from 'recharts'
 
 interface DeepDiveTabProps {
@@ -123,14 +121,13 @@ function calculateLinearRegression(data: { index: number; value: number }[]): { 
   return { slope: isNaN(slope) ? 0 : slope, intercept: isNaN(intercept) ? 0 : intercept }
 }
 
-// Interactive Line Chart Component with zoom/pan and team colors
+// Interactive Line Chart Component with drag-to-zoom, scroll zoom, pan, and team colors
 function LineChart({
   data,
   label,
   format = (v: number) => v.toFixed(1),
   height = 280,
   color = '#00ceb8',
-  showBrush = true,
   showTeamColors = false,
   hideTrend = false,
   position,
@@ -140,42 +137,65 @@ function LineChart({
   format?: (v: number) => string
   height?: number
   color?: string
-  showBrush?: boolean
   showTeamColors?: boolean
   hideTrend?: boolean
   position?: string
 }) {
+  // Zoom/pan state
+  const [zoomLeft, setZoomLeft] = useState<number>(0)
+  const [zoomRight, setZoomRight] = useState<number>(data.length - 1)
+  const [selectStart, setSelectStart] = useState<string | null>(null)
+  const [selectEnd, setSelectEnd] = useState<string | null>(null)
+  const [isPanning, setIsPanning] = useState(false)
+  const panStartRef = useRef<{ x: number; left: number; right: number } | null>(null)
+  const chartWrapperRef = useRef<HTMLDivElement>(null)
+
+  // Reset zoom when data changes (e.g. switching players or presets)
+  const dataLenRef = useRef(data.length)
+  useEffect(() => {
+    if (data.length !== dataLenRef.current) {
+      setZoomLeft(0)
+      setZoomRight(data.length - 1)
+      dataLenRef.current = data.length
+    }
+  }, [data.length])
+
   if (data.length === 0) return null
 
+  const isZoomed = zoomLeft > 0 || zoomRight < data.length - 1
+
+  // Slice data to visible zoom window
+  const visibleData = data.slice(zoomLeft, zoomRight + 1)
+
   // Transform data for Recharts
-  const chartData = data.map((d, i) => ({
+  const chartData = visibleData.map((d, i) => ({
     name: d.x,
     value: d.y,
-    index: i,
+    index: zoomLeft + i,
     team: d.team || 'FA',
     snapShare: d.snapShare,
     inactive: d.inactive,
   }))
 
-  // Count occurrences of each team (excluding inactive weeks)
+  // Count occurrences of each team (excluding inactive weeks) — use FULL data for stable colors
   const teamCounts: Record<string, number> = {}
-  chartData.forEach(d => {
-    if (d.team && !d.inactive) {
-      teamCounts[d.team] = (teamCounts[d.team] || 0) + 1
+  data.forEach(d => {
+    const team = d.team || 'FA'
+    if (!d.inactive) {
+      teamCounts[team] = (teamCounts[team] || 0) + 1
     }
   })
 
-  // Get unique teams for legend (in order of appearance)
-  // Filter out teams with < 3 data points (likely erroneous/fallback data)
+  // Get unique teams for legend (in order of appearance from full data)
   const teamsInOrder: string[] = []
-  chartData.forEach(d => {
-    if (d.team && !d.inactive && !teamsInOrder.includes(d.team) && teamCounts[d.team] >= 3) {
-      teamsInOrder.push(d.team)
+  data.forEach(d => {
+    const team = d.team || 'FA'
+    if (!d.inactive && !teamsInOrder.includes(team) && teamCounts[team] >= 3) {
+      teamsInOrder.push(team)
     }
   })
 
   // Reassign points with rare/erroneous teams or inactive weeks to the nearest valid team
-  // This prevents gaps in the chart
   let lastValidTeam = teamsInOrder[0] || 'FA'
   chartData.forEach(d => {
     if (d.inactive || teamCounts[d.team] < 3) {
@@ -186,23 +206,19 @@ function LineChart({
   })
 
   // For multi-team coloring, create separate data series for each team
-  // Each series has values only for its team's segments (with overlap at transitions)
   const teamDataSeries: Record<string, (number | null)[]> = {}
   if (showTeamColors && teamsInOrder.length > 1) {
     teamsInOrder.forEach(team => {
       teamDataSeries[team] = chartData.map(() => null)
     })
 
-    // Fill in values for each team, including overlap points at transitions
     chartData.forEach((d, i) => {
       const team = d.team
       if (teamDataSeries[team]) {
         teamDataSeries[team][i] = d.value
-        // Add overlap point at transition (previous point if different team)
         if (i > 0 && chartData[i - 1].team !== team) {
           teamDataSeries[team][i - 1] = chartData[i - 1].value
         }
-        // Add overlap point at next transition
         if (i < chartData.length - 1 && chartData[i + 1].team !== team) {
           teamDataSeries[team][i + 1] = chartData[i + 1].value
         }
@@ -210,23 +226,26 @@ function LineChart({
     })
   }
 
-  // Default line color (used when not showing team colors or single team)
   const lineColor = showTeamColors && teamsInOrder.length > 0
     ? (NFL_TEAM_COLORS[teamsInOrder[0]] || color)
     : color
 
-  // Calculate linear regression for trend line using filtered data points
-  // Exclude inactive weeks, and for QBs exclude zero-point games, for others exclude games with <10% snap share AND 0 points
-  const filteredData = chartData.filter(d => {
+  // Calculate linear regression on FULL data for consistent trend line
+  const allChartData = data.map((d, i) => ({
+    value: d.y,
+    index: i,
+    team: d.team || 'FA',
+    snapShare: d.snapShare,
+    inactive: d.inactive,
+  }))
+  const filteredDataAll = allChartData.filter(d => {
     if (d.inactive) return false
     if (position === 'QB') return d.value > 0
-    // Exclude only if BOTH snap share < 10% AND points = 0
     if (d.snapShare !== undefined && d.snapShare < 10 && d.value === 0) return false
-    // Also exclude if no snap share data and 0 points
     if (d.snapShare === undefined && d.value === 0) return false
     return true
   })
-  const regressionData = filteredData.map(d => ({ index: d.index, value: d.value }))
+  const regressionData = filteredDataAll.map(d => ({ index: d.index, value: d.value }))
   const { slope, intercept } = calculateLinearRegression(regressionData)
 
   // Add trend line values and team-specific values
@@ -236,7 +255,6 @@ function LineChart({
       ...d,
       trend: trendValue,
     }
-    // Add team-specific values for multi-team charts
     if (showTeamColors && teamsInOrder.length > 1) {
       teamsInOrder.forEach(team => {
         result[`value_${team}`] = teamDataSeries[team][i]
@@ -245,10 +263,9 @@ function LineChart({
     return result
   })
 
-  // Custom tooltip with team info
+  // Custom tooltip
   const CustomTooltip = ({ active, payload, label: tooltipLabel }: any) => {
     if (active && payload && payload.length) {
-      // Find the actual value from any of the payloads
       const validPayload = payload.find((p: any) => p.value !== null && p.value !== undefined)
       if (!validPayload) return null
       const team = validPayload?.payload?.team
@@ -267,11 +284,10 @@ function LineChart({
     return null
   }
 
-  // Determine trend direction for label
   const trendDirection = slope > 0.01 ? 'Trending Up' : slope < -0.01 ? 'Trending Down' : 'Stable'
   const trendColor = slope > 0.01 ? '#22c55e' : slope < -0.01 ? '#ef4444' : '#f59e0b'
 
-  // Calculate dynamic Y-axis domain (5% padding below min, 5% above max)
+  // Dynamic Y-axis domain from visible data
   const values = chartData.filter(d => d.value > 0).map(d => d.value)
   const minValue = values.length > 0 ? Math.min(...values) : 0
   const maxValue = values.length > 0 ? Math.max(...values) : 100
@@ -279,113 +295,237 @@ function LineChart({
   const yMin = Math.max(0, minValue - range * 0.05)
   const yMax = maxValue + range * 0.05
 
-  // Check if we should render multiple team lines
   const useMultiTeamLines = showTeamColors && teamsInOrder.length > 1
 
+  // --- Zoom/Pan handlers ---
+
+  // Drag-to-zoom: mouseDown on chart starts selection
+  const handleMouseDown = (e: any) => {
+    if (!e || !e.activeLabel) return
+    // If already zoomed, start panning instead
+    if (isZoomed && e.chartX !== undefined) {
+      setIsPanning(true)
+      panStartRef.current = { x: e.chartX, left: zoomLeft, right: zoomRight }
+      return
+    }
+    setSelectStart(e.activeLabel)
+    setSelectEnd(null)
+  }
+
+  const handleMouseMove = (e: any) => {
+    if (!e || !e.activeLabel) return
+    if (isPanning && panStartRef.current && e.chartX !== undefined) {
+      const dx = e.chartX - panStartRef.current.x
+      // Convert pixel delta to index delta (approximate)
+      const visibleCount = zoomRight - zoomLeft + 1
+      const wrapper = chartWrapperRef.current
+      const chartWidth = wrapper ? wrapper.clientWidth - 65 : 600 // approximate chart area width minus y-axis
+      const indexDelta = Math.round((-dx / chartWidth) * visibleCount)
+      let newLeft = panStartRef.current.left + indexDelta
+      let newRight = panStartRef.current.right + indexDelta
+      // Clamp
+      if (newLeft < 0) { newRight -= newLeft; newLeft = 0 }
+      if (newRight > data.length - 1) { newLeft -= (newRight - data.length + 1); newRight = data.length - 1 }
+      newLeft = Math.max(0, newLeft)
+      setZoomLeft(newLeft)
+      setZoomRight(newRight)
+      return
+    }
+    if (selectStart) {
+      setSelectEnd(e.activeLabel)
+    }
+  }
+
+  const handleMouseUp = () => {
+    if (isPanning) {
+      setIsPanning(false)
+      panStartRef.current = null
+      return
+    }
+    if (selectStart && selectEnd && selectStart !== selectEnd) {
+      // Find indices in the VISIBLE chartData
+      const startIdx = chartData.findIndex(d => d.name === selectStart)
+      const endIdx = chartData.findIndex(d => d.name === selectEnd)
+      if (startIdx !== -1 && endIdx !== -1) {
+        const lo = Math.min(startIdx, endIdx)
+        const hi = Math.max(startIdx, endIdx)
+        // Convert back to global indices
+        const newLeft = zoomLeft + lo
+        const newRight = zoomLeft + hi
+        if (newRight - newLeft >= 2) {
+          setZoomLeft(newLeft)
+          setZoomRight(newRight)
+        }
+      }
+    }
+    setSelectStart(null)
+    setSelectEnd(null)
+  }
+
+  // Scroll wheel to zoom
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault()
+    const zoomFactor = e.deltaY > 0 ? 1.3 : 0.7 // scroll down = zoom out, scroll up = zoom in
+    const visibleCount = zoomRight - zoomLeft + 1
+    const newCount = Math.round(visibleCount * zoomFactor)
+
+    if (newCount >= data.length) {
+      // Zoom all the way out
+      setZoomLeft(0)
+      setZoomRight(data.length - 1)
+      return
+    }
+    if (newCount < 3) return // minimum 3 data points visible
+
+    const center = (zoomLeft + zoomRight) / 2
+    let newLeft = Math.round(center - newCount / 2)
+    let newRight = newLeft + newCount - 1
+    if (newLeft < 0) { newRight -= newLeft; newLeft = 0 }
+    if (newRight > data.length - 1) { newLeft -= (newRight - data.length + 1); newRight = data.length - 1 }
+    newLeft = Math.max(0, newLeft)
+    newRight = Math.min(data.length - 1, newRight)
+    setZoomLeft(newLeft)
+    setZoomRight(newRight)
+  }
+
+  // Double-click to reset zoom
+  const handleDoubleClick = () => {
+    setZoomLeft(0)
+    setZoomRight(data.length - 1)
+  }
+
   return (
-    <div className="w-full" style={{ height: height + (showBrush ? 50 : 0) }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart
-          data={chartDataWithTrend}
-          margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
-        >
-          <defs>
-            {useMultiTeamLines ? (
-              // Create gradients for each team
-              teamsInOrder.map(team => (
-                <linearGradient key={team} id={`gradient-${label}-${team}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={NFL_TEAM_COLORS[team] || color} stopOpacity={0.5} />
-                  <stop offset="95%" stopColor={NFL_TEAM_COLORS[team] || color} stopOpacity={0.05} />
+    <div className="w-full" style={{ height }}>
+      <div
+        ref={chartWrapperRef}
+        className="w-full h-full relative"
+        onWheel={handleWheel}
+        onDoubleClick={handleDoubleClick}
+        style={{ cursor: isZoomed ? (isPanning ? 'grabbing' : 'grab') : 'crosshair' }}
+      >
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart
+            data={chartDataWithTrend}
+            margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+          >
+            <defs>
+              {useMultiTeamLines ? (
+                teamsInOrder.map(team => (
+                  <linearGradient key={team} id={`gradient-${label}-${team}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={NFL_TEAM_COLORS[team] || color} stopOpacity={0.5} />
+                    <stop offset="95%" stopColor={NFL_TEAM_COLORS[team] || color} stopOpacity={0.05} />
+                  </linearGradient>
+                ))
+              ) : (
+                <linearGradient id={`gradient-${label}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={lineColor} stopOpacity={0.5} />
+                  <stop offset="95%" stopColor={lineColor} stopOpacity={0.08} />
                 </linearGradient>
+              )}
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#4B5563" vertical={false} />
+            <XAxis
+              dataKey="name"
+              stroke="#9CA3AF"
+              fontSize={10}
+              tickLine={{ stroke: '#6B7280', strokeWidth: 1 }}
+              tickSize={-4}
+              tickMargin={8}
+              axisLine={{ stroke: '#6B7280' }}
+              interval={Math.max(0, Math.floor(chartData.length / 8) - 1)}
+            />
+            <YAxis
+              stroke="#9CA3AF"
+              fontSize={12}
+              tickLine={false}
+              axisLine={{ stroke: '#6B7280' }}
+              tickFormatter={(value) => value === 0 && yMin === 0 ? '' : format(value)}
+              width={55}
+              domain={[yMin, yMax]}
+              allowDataOverflow={false}
+            />
+            <Tooltip
+              content={<CustomTooltip />}
+              cursor={{ stroke: '#9CA3AF', strokeWidth: 1, strokeDasharray: '4 4' }}
+            />
+            {useMultiTeamLines ? (
+              teamsInOrder.map((team, idx) => (
+                <Area
+                  key={team}
+                  type="monotone"
+                  dataKey={`value_${team}`}
+                  stroke={NFL_TEAM_COLORS[team] || color}
+                  strokeWidth={2.5}
+                  fill={`url(#gradient-${label}-${team})`}
+                  dot={false}
+                  activeDot={{ r: 6, fill: NFL_TEAM_COLORS[team] || color, stroke: '#1f2937', strokeWidth: 2 }}
+                  connectNulls={true}
+                  isAnimationActive={idx === 0}
+                />
               ))
             ) : (
-              <linearGradient id={`gradient-${label}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={lineColor} stopOpacity={0.5} />
-                <stop offset="95%" stopColor={lineColor} stopOpacity={0.08} />
-              </linearGradient>
-            )}
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#4B5563" vertical={false} />
-          <XAxis
-            dataKey="name"
-            stroke="#9CA3AF"
-            fontSize={10}
-            tickLine={{ stroke: '#6B7280', strokeWidth: 1 }}
-            tickSize={-4}
-            tickMargin={8}
-            axisLine={{ stroke: '#6B7280' }}
-            interval={Math.max(0, Math.floor(chartData.length / 8) - 1)}
-          />
-          <YAxis
-            stroke="#9CA3AF"
-            fontSize={12}
-            tickLine={false}
-            axisLine={{ stroke: '#6B7280' }}
-            tickFormatter={(value) => value === 0 && yMin === 0 ? '' : format(value)}
-            width={55}
-            domain={[yMin, yMax]}
-            allowDataOverflow={false}
-          />
-          <Tooltip
-            content={<CustomTooltip />}
-            cursor={{ stroke: '#9CA3AF', strokeWidth: 1, strokeDasharray: '4 4' }}
-          />
-          {useMultiTeamLines ? (
-            // Render separate line for each team with its color
-            teamsInOrder.map((team, idx) => (
               <Area
-                key={team}
                 type="monotone"
-                dataKey={`value_${team}`}
-                stroke={NFL_TEAM_COLORS[team] || color}
+                dataKey="value"
+                stroke={lineColor}
                 strokeWidth={2.5}
-                fill={`url(#gradient-${label}-${team})`}
+                fill={`url(#gradient-${label})`}
                 dot={false}
-                activeDot={{ r: 6, fill: NFL_TEAM_COLORS[team] || color, stroke: '#1f2937', strokeWidth: 2 }}
-                connectNulls={true}
-                isAnimationActive={idx === 0}
+                activeDot={{ r: 6, fill: lineColor, stroke: '#1f2937', strokeWidth: 2 }}
               />
-            ))
-          ) : (
-            <Area
-              type="monotone"
-              dataKey="value"
-              stroke={lineColor}
-              strokeWidth={2.5}
-              fill={`url(#gradient-${label})`}
-              dot={false}
-              activeDot={{ r: 6, fill: lineColor, stroke: '#1f2937', strokeWidth: 2 }}
-            />
-          )}
-          {/* Linear best fit trend line - only show with 5+ data points */}
-          {filteredData.length >= 5 && (
-            <Line
-              type="linear"
-              dataKey="trend"
-              stroke={trendColor}
-              strokeWidth={2}
-              strokeDasharray="5 5"
-              dot={false}
-              connectNulls={true}
-            />
-          )}
-          {showBrush && data.length > 5 && (
-            <Brush
-              dataKey="name"
-              height={30}
-              stroke={teamsInOrder.length > 0 ? (NFL_TEAM_COLORS[teamsInOrder[teamsInOrder.length - 1]] || color) : lineColor}
-              fill="#1f2937"
-              tickFormatter={() => ''}
-            />
-          )}
-        </AreaChart>
-      </ResponsiveContainer>
-      {!hideTrend && filteredData.length >= 5 && (
-        <div className="flex justify-end mt-1">
+            )}
+            {/* Linear best fit trend line */}
+            {filteredDataAll.length >= 5 && (
+              <Line
+                type="linear"
+                dataKey="trend"
+                stroke={trendColor}
+                strokeWidth={2}
+                strokeDasharray="5 5"
+                dot={false}
+                connectNulls={true}
+              />
+            )}
+            {/* Drag-to-zoom selection highlight */}
+            {selectStart && selectEnd && (
+              <ReferenceArea
+                x1={selectStart}
+                x2={selectEnd}
+                strokeOpacity={0.3}
+                fill="#00ceb8"
+                fillOpacity={0.15}
+              />
+            )}
+          </AreaChart>
+        </ResponsiveContainer>
+        {/* Zoom reset button */}
+        {isZoomed && (
+          <button
+            onClick={(e) => { e.stopPropagation(); handleDoubleClick() }}
+            className="absolute top-2 right-3 bg-gray-700/80 hover:bg-gray-600 text-gray-300 text-xs px-2 py-1 rounded transition-colors backdrop-blur-sm"
+          >
+            Reset Zoom
+          </button>
+        )}
+      </div>
+      {!hideTrend && filteredDataAll.length >= 5 && (
+        <div className="flex items-center justify-between mt-1">
+          <p className="text-xs text-gray-500">
+            {isZoomed ? 'Drag to pan · Double-click to reset' : 'Drag to zoom · Scroll to zoom in/out'}
+          </p>
           <p className="text-xs" style={{ color: trendColor }}>
             {trendDirection} {slope !== 0 && `(${slope > 0 ? '+' : ''}${(slope * 10).toFixed(2)}/10 weeks)`}
           </p>
         </div>
+      )}
+      {hideTrend && data.length > 5 && (
+        <p className="text-xs text-gray-500 mt-1">
+          {isZoomed ? 'Drag to pan · Double-click to reset' : 'Drag to zoom · Scroll to zoom in/out'}
+        </p>
       )}
     </div>
   )
