@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { SleeperPlayer, SleeperRoster, LeagueUser } from '@/lib/types'
 import { getSleeperPlayerValue } from '@/lib/fantasypros'
 import { Skeleton, SkeletonCard, SkeletonChart } from '@/components/Skeleton'
-import { getCurrentSeason } from '@/lib/sleeper'
+// getCurrentSeason no longer needed — server-side route handles season logic
 import {
   LineChart as RechartsLineChart,
   Line,
@@ -410,8 +410,7 @@ export default function DeepDiveTab({
   const [canScrollRight, setCanScrollRight] = useState(false)
   const statsScrollRef = useRef<HTMLDivElement>(null)
 
-  const currentSeason = getCurrentSeason()
-  const currentSeasonNum = parseInt(currentSeason)
+  // Season info no longer needed client-side — server handles it
 
   // Create roster ownership map
   const ownershipMap = useMemo(() => {
@@ -573,17 +572,7 @@ export default function DeepDiveTab({
     }
   }
 
-  function getCurrentWeek(): number {
-    const season = currentSeasonNum
-    const seasonStart = new Date(`${season}-09-05`)
-    const now = new Date()
-    const diffTime = now.getTime() - seasonStart.getTime()
-    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
-    const week = Math.floor(diffDays / 7) + 1
-    return Math.min(Math.max(week, 1), 18)
-  }
-
-  // Fetch player data (used by both preload and select)
+  // Fetch player data via server-side aggregation API (single request replaces 100+ client calls)
   const fetchPlayerData = useCallback(async (player: SleeperPlayer): Promise<CachedPlayerData | null> => {
     const playerId = player.player_id
 
@@ -607,152 +596,41 @@ export default function DeepDiveTab({
     preloadingPlayers.add(playerId)
 
     try {
-      const seasonData: SeasonStats[] = []
+      const playerFullName = `${player.first_name} ${player.last_name}`
+      const espnId = (player as unknown as Record<string, unknown>).espn_id as string | undefined
+      const params = new URLSearchParams({ playerId })
+      if (playerFullName) params.set('playerName', playerFullName)
+      if (espnId) params.set('espnId', espnId)
+      if (player.team) params.set('team', player.team)
 
-      // Fetch team history from ESPN (if player has ESPN ID)
-      let teamHistory: Record<string, string> = {}
-      const espnId = (player as any).espn_id
-      if (espnId) {
-        try {
-          const teamHistoryRes = await fetch(`/api/player-team-history?espnId=${espnId}`)
-          if (teamHistoryRes.ok) {
-            const data = await teamHistoryRes.json()
-            teamHistory = data.teamHistory || {}
-          }
-        } catch {
-          // Fall back to current team if team history fetch fails
-        }
-      }
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 30000)
 
-      // Fetch stats for last 6 seasons - all in parallel for speed
-      const seasons = Array.from({ length: 6 }, (_, i) => currentSeasonNum - i)
-
-      // Fetch with timeout helper
-      const fetchWithTimeout = async (url: string, timeout = 8000): Promise<Record<string, PlayerStats>> => {
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), timeout)
-        try {
-          const res = await fetch(url, { signal: controller.signal })
-          clearTimeout(timeoutId)
-          return res.ok ? res.json() : {}
-        } catch {
-          clearTimeout(timeoutId)
-          return {}
-        }
-      }
-
-      // Fetch all seasons in parallel
-      const seasonPromises = seasons.map(async (season) => {
-        const weeksToFetch = season === currentSeasonNum ? getCurrentWeek() : 18
-        const weeklyStats: WeeklyStats[] = []
-        const totals: PlayerStats = {}
-
-        // Fetch all weeks for this season in parallel
-        const weekPromises = Array.from({ length: weeksToFetch }, (_, i) => i + 1).map(async week => {
-          const data = await fetchWithTimeout(`https://api.sleeper.app/v1/stats/nfl/regular/${season}/${week}`)
-          return { week, data }
-        })
-
-        const results = await Promise.all(weekPromises)
-
-        results.forEach(({ week, data }) => {
-          if (data[playerId]) {
-            const stats = { ...data[playerId] }
-            // Compute snap share percentage
-            const offSnp = stats.off_snp as number | undefined
-            const tmOffSnp = stats.tm_off_snp as number | undefined
-            if (offSnp && tmOffSnp && tmOffSnp > 0) {
-              stats.snap_share = (offSnp / tmOffSnp) * 100
-            }
-            // Use team from ESPN history if available
-            const team = teamHistory[`${season}-${week}`] || ''
-            weeklyStats.push({ week, stats, team })
-          }
-        })
-
-        weeklyStats.sort((a, b) => a.week - b.week)
-
-        // Fill in missing teams from nearby weeks
-        let lastKnownTeam = ''
-        weeklyStats.forEach(ws => {
-          if (ws.team) {
-            lastKnownTeam = ws.team
-          } else if (lastKnownTeam) {
-            ws.team = lastKnownTeam
-          }
-        })
-        lastKnownTeam = ''
-        for (let i = weeklyStats.length - 1; i >= 0; i--) {
-          const currentTeam = weeklyStats[i].team
-          if (currentTeam) {
-            lastKnownTeam = currentTeam
-          } else if (lastKnownTeam) {
-            weeklyStats[i].team = lastKnownTeam
-          }
-        }
-        const fallbackTeam = player.team || 'FA'
-        weeklyStats.forEach(ws => {
-          if (!ws.team) {
-            ws.team = fallbackTeam
-          }
-        })
-
-        // Calculate totals
-        let snapShareSum = 0
-        let snapShareCount = 0
-        weeklyStats.forEach(({ stats }) => {
-          Object.entries(stats).forEach(([key, value]) => {
-            if (typeof value === 'number') {
-              if (key === 'snap_share') {
-                snapShareSum += value
-                snapShareCount++
-              } else {
-                totals[key] = (totals[key] || 0) + value
-              }
-            }
-          })
-        })
-        if (snapShareCount > 0) {
-          totals.snap_share = snapShareSum / snapShareCount
-        }
-
-        return { season: season.toString(), weeklyStats, totals }
+      const res = await fetch(`/api/player-stats?${params.toString()}`, {
+        signal: controller.signal,
       })
+      clearTimeout(timeoutId)
 
-      const allSeasonData = await Promise.all(seasonPromises)
-
-      // Filter out empty seasons
-      allSeasonData.forEach(data => {
-        if (data.weeklyStats.length > 0) {
-          seasonData.push(data)
-        }
-      })
-
-      // Fetch historical dynasty values
-      let historicalValues: { date: string; value: number }[] = []
-      try {
-        const playerFullName = `${player.first_name} ${player.last_name}`
-        const histRes = await fetch(`/api/historical-values?player=${encodeURIComponent(playerFullName)}`)
-        if (histRes.ok) {
-          const histData = await histRes.json()
-          historicalValues = histData.history || []
-        }
-      } catch {
-        // Ignore historical values errors
+      if (!res.ok) {
+        return null
       }
+
+      const data = await res.json()
 
       const cachedData: CachedPlayerData = {
-        seasonData,
-        historicalValues,
+        seasonData: data.seasonData || [],
+        historicalValues: data.historicalValues || [],
         timestamp: Date.now(),
       }
 
       playerDataCache.set(playerId, cachedData)
       return cachedData
+    } catch {
+      return null
     } finally {
       preloadingPlayers.delete(playerId)
     }
-  }, [currentSeasonNum])
+  }, [])
 
   // Preload player data in background (doesn't set state)
   const preloadPlayer = useCallback((player: SleeperPlayer) => {
